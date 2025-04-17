@@ -22,7 +22,7 @@ app.use((req, res, next) => {
 // Configuração do Gemini
 const genAI = new GoogleGenerativeAI("AIzaSyAoy3uazke_0KGp3iBIHmE8fRODK2PQpTA");
 
-async function run(prompt) {
+async function run(prompt, history = []) {
   try {
     console.log('Recebida pergunta:', prompt);
     
@@ -30,8 +30,8 @@ async function run(prompt) {
       model: "gemini-2.0-flash",
       generationConfig: {
         stopSequences: [],
-        maxOutputTokens: 500,
-        temperature: 0.7,
+        maxOutputTokens: 1000,
+        temperature: 0.8,
         topP: 0.95,
         topK: 40,
       },
@@ -55,21 +55,28 @@ async function run(prompt) {
       ],
     });
 
+    // Construir o histórico da conversa
+    const chatHistory = [
+      {
+        role: "user",
+        parts: "Você é um especialista em história com conhecimento profundo sobre história do Brasil, história mundial, guerras, civilizações antigas e períodos históricos importantes. Sua função é fornecer respostas detalhadas, precisas e envolventes, sempre mantendo um tom educacional e acessível. Você pode usar analogias, exemplos e contextos para tornar as explicações mais claras e interessantes.",
+      },
+      {
+        role: "model",
+        parts: "Entendido! Sou um especialista em história dedicado a fornecer explicações detalhadas e envolventes. Vou usar meu conhecimento para responder suas perguntas de forma clara, precisa e interessante, sempre mantendo um tom educacional e acessível.",
+      },
+      ...history.map(msg => ({
+        role: msg.role,
+        parts: msg.content
+      }))
+    ];
+
     const chat = model.startChat({
-      history: [
-        {
-          role: "user",
-          parts: "Olá, você é um especialista em história?",
-        },
-        {
-          role: "model",
-          parts: "Olá! Sou um assistente especializado em história, com conhecimento sobre história do Brasil, história mundial, guerras, civilizações antigas e muito mais. Posso te ajudar com informações precisas e detalhadas sobre qualquer período histórico. Como posso ajudar você hoje?",
-        },
-      ],
+      history: chatHistory,
       generationConfig: {
         stopSequences: [],
-        maxOutputTokens: 500,
-        temperature: 0.7,
+        maxOutputTokens: 1000,
+        temperature: 0.8,
         topP: 0.95,
         topK: 40,
       },
@@ -93,7 +100,7 @@ app.get('/test', (req, res) => {
 app.post('/chat', async (req, res) => {
   try {
     console.log('Recebida requisição POST em /chat');
-    const { message } = req.body;
+    const { message, history } = req.body;
     
     if (!message) {
       console.log('Mensagem não fornecida');
@@ -101,7 +108,7 @@ app.post('/chat', async (req, res) => {
     }
     
     console.log('Processando mensagem:', message);
-    const response = await run(message);
+    const response = await run(message, history);
     console.log('Enviando resposta para o cliente');
     res.json({ response });
   } catch (error) {

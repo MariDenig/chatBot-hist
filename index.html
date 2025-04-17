@@ -16,6 +16,11 @@
 
         <main>
             <div class="chat-container">
+                <div class="chat-header">
+                    <button id="history-button" class="history-btn">
+                        <i class="fas fa-history"></i> Histórico
+                    </button>
+                </div>
                 <div class="chat-messages" id="chat-messages">
                     <div class="message bot">
                         <p>Olá! Sou seu assistente de história. Posso te ajudar com perguntas sobre:</p>
@@ -30,15 +35,13 @@
                     </div>
                 </div>
                 <div class="input-container">
-                    <input type="text" id="user-input" placeholder="Digite sua pergunta sobre história...">
-                    <button id="send-button"><i class="fas fa-paper-plane"></i></button>
+                    <input type="text" id="user-input" placeholder="Digite sua pergunta sobre história..." autocomplete="off">
+                    <button id="send-button" type="button">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
                 </div>
             </div>
         </main>
-
-        <footer>
-            <p>Desenvolvido com ❤️ para amantes da história</p>
-        </footer>
     </div>
     <script src="script.js"></script>
 </body>
