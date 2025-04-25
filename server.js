@@ -6,12 +6,16 @@ const path = require('path');
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Debug: Verificar se o arquivo .env está sendo carregado
+console.log('Diretório atual:', __dirname);
+console.log('Variáveis de ambiente carregadas:', process.env);
+
 // Middleware para processar JSON
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
 // Verificar chave de API
-const apiKey = process.env.GEMINI_API_KEY;
+const apiKey = process.env.GOOGLE_API_KEY;
 if (!apiKey) {
     console.error("Erro: Chave de API do Google não encontrada. Verifique seu arquivo .env");
     process.exit(1);
@@ -22,13 +26,16 @@ const genAI = new GoogleGenerativeAI(apiKey);
 
 // Configurar modelo
 const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     systemInstruction: "Você é um chatbot historiador. Responda às perguntas dos usuários de forma informativa, precisa e envolvente, sempre com uma perspectiva histórica. Cite fontes ou períodos relevantes quando apropriado. Aja como um especialista apaixonado por história.",
 });
 
 // Rota para o chat
 app.post('/chat', async (req, res) => {
     try {
+        console.log('Recebida requisição POST para /chat');
+        console.log('Corpo da requisição:', req.body);
+
         const { message, history = [] } = req.body;
 
         if (!message) {
@@ -113,7 +120,7 @@ app.get('/', (req, res) => {
 
 // Middleware para tratamento de erros
 app.use((err, req, res, next) => {
-    console.error(err.stack);
+    console.error('Erro no servidor:', err.stack);
     res.status(500).json({ 
         error: 'Ocorreu um erro interno no servidor',
         type: 'server_error'

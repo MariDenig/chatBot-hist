@@ -167,6 +167,7 @@ document.addEventListener('DOMContentLoaded', () => {
         setLoading(true);
 
         try {
+            console.log('Enviando mensagem para o servidor:', message);
             const response = await fetch('/chat', {
                 method: 'POST',
                 headers: {
@@ -178,6 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }),
             });
 
+            console.log('Resposta do servidor:', response.status);
             const data = await response.json();
 
             if (!response.ok) {
@@ -206,6 +208,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 );
             }
         } catch (error) {
+            console.error('Erro ao enviar mensagem:', error);
             handleError(error, error.type || 'api_error');
         } finally {
             setLoading(false);
