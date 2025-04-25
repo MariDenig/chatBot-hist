@@ -5,7 +5,7 @@ const readline = require('readline').createInterface({
     output: process.stdout
 });
 
-const apiKey = process.env.GOOGLE_API_KEY;
+const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) {
     console.error("Erro: Chave de API do Google não encontrada. Verifique seu arquivo .env");
     process.exit(1);
@@ -14,7 +14,7 @@ if (!apiKey) {
 const genAI = new GoogleGenerativeAI(apiKey);
 
 const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     systemInstruction: "Você é um chatbot historiador. Responda às perguntas dos usuários de forma informativa, precisa e envolvente, sempre com uma perspectiva histórica. Cite fontes ou períodos relevantes quando apropriado. Aja como um especialista apaixonado por história.",
 });
 

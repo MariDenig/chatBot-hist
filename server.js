@@ -4,14 +4,14 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const path = require('path');
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 // Middleware para processar JSON
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
 // Verificar chave de API
-const apiKey = process.env.GOOGLE_API_KEY;
+const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) {
     console.error("Erro: Chave de API do Google não encontrada. Verifique seu arquivo .env");
     process.exit(1);
@@ -42,7 +42,28 @@ app.post('/chat', async (req, res) => {
             history: history,
             generationConfig: {
                 temperature: 0.7,
-            }
+                topK: 40,
+                topP: 0.95,
+                maxOutputTokens: 1024,
+            },
+            safetySettings: [
+                {
+                    category: "HARM_CATEGORY_HARASSMENT",
+                    threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                },
+                {
+                    category: "HARM_CATEGORY_HATE_SPEECH",
+                    threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                },
+                {
+                    category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                },
+                {
+                    category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+                    threshold: "BLOCK_MEDIUM_AND_ABOVE"
+                }
+            ]
         });
 
         const result = await chat.sendMessage(message);
@@ -73,6 +94,9 @@ app.post('/chat', async (req, res) => {
         } else if (error.message.includes('network')) {
             errorType = 'network_error';
             errorMessage = 'Erro de conexão. Verifique sua internet e tente novamente.';
+        } else if (error.message.includes('quota')) {
+            errorType = 'quota_error';
+            errorMessage = 'Limite de requisições excedido. Tente novamente mais tarde.';
         }
 
         res.status(500).json({ 
