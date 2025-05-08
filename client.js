@@ -168,6 +168,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             console.log('Enviando mensagem para o servidor:', message);
+            console.log('Histórico atual:', chatHistory);
+            
             const response = await fetch('/chat', {
                 method: 'POST',
                 headers: {
@@ -181,16 +183,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
             console.log('Resposta do servidor:', response.status);
             const data = await response.json();
+            console.log('Dados recebidos do servidor:', data);
 
             if (!response.ok) {
-                throw new Error(data.error || 'Erro desconhecido');
+                console.error('Erro na resposta do servidor:', data);
+                throw new Error(data.details || data.error || 'Erro desconhecido');
             }
 
             // Atualizar histórico
             chatHistory = data.history;
+            console.log('Histórico atualizado:', chatHistory);
             
             // Mostrar resposta do bot
-            addMessage(data.response);
+            if (data.response) {
+                addMessage(data.response);
+            } else {
+                console.error('Resposta inválida do servidor:', data);
+                throw new Error('Resposta inválida do servidor');
+            }
 
             // Adicionar à conversa atual
             if (chatHistory.length === 2) { // Nova conversa
@@ -208,7 +218,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 );
             }
         } catch (error) {
-            console.error('Erro ao enviar mensagem:', error);
+            console.error('Erro detalhado ao enviar mensagem:', error);
+            console.error('Stack trace:', error.stack);
             handleError(error, error.type || 'api_error');
         } finally {
             setLoading(false);
