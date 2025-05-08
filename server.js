@@ -1,133 +1,216 @@
-require('dotenv').config();
 const express = require('express');
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const cors = require('cors');
 const path = require('path');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const fs = require('fs');
+
+// Verificar se o arquivo .env existe
+const envPath = path.join(__dirname, '.env');
+console.log('Procurando arquivo .env em:', envPath);
+console.log('Arquivo .env existe?', fs.existsSync(envPath));
+
+require('dotenv').config();
+
+// Log de todas as variáveis de ambiente
+console.log('Variáveis de ambiente carregadas:', {
+    GOOGLE_API_KEY: process.env.GOOGLE_API_KEY ? 'Definida' : 'Não definida',
+    NODE_ENV: process.env.NODE_ENV
+});
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
-// Debug: Verificar se o arquivo .env está sendo carregado
-console.log('Diretório atual:', __dirname);
-console.log('Variáveis de ambiente carregadas:', process.env);
-
-// Middleware para processar JSON
-app.use(express.json());
-app.use(express.static(path.join(__dirname)));
-
-// Verificar chave de API
-const apiKey = process.env.GOOGLE_API_KEY;
-if (!apiKey) {
-    console.error("Erro: Chave de API do Google não encontrada. Verifique seu arquivo .env");
+// Verificar se a chave API está configurada
+if (!process.env.GOOGLE_API_KEY) {
+    console.error('ERRO: GOOGLE_API_KEY não está definida no arquivo .env');
+    console.error('Por favor, verifique se:');
+    console.error('1. O arquivo .env existe no diretório:', __dirname);
+    console.error('2. O arquivo .env contém a linha: GOOGLE_API_KEY=sua_chave_api');
+    console.error('3. Não há espaços antes ou depois do sinal de igual');
     process.exit(1);
 }
 
-// Inicializar cliente da API do Google
-const genAI = new GoogleGenerativeAI(apiKey);
+// Configurar Gemini
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
-// Configurar modelo
-const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: "Você é um chatbot historiador. Responda às perguntas dos usuários de forma informativa, precisa e envolvente, sempre com uma perspectiva histórica. Cite fontes ou períodos relevantes quando apropriado. Aja como um especialista apaixonado por história.",
+// Definir as ferramentas disponíveis
+const tools = [
+    {
+        functionDeclarations: [
+            {
+                name: "getCurrentTime",
+                description: "Obtém a data e hora atuais.",
+                parameters: {
+                    type: "object",
+                    properties: {},
+                    required: []
+                }
+            },
+            {
+                name: "searchHistory",
+                description: "Pesquisa informações históricas sobre um tópico específico.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        topic: {
+                            type: "string",
+                            description: "O tópico histórico a ser pesquisado"
+                        },
+                        period: {
+                            type: "string",
+                            description: "O período histórico (opcional)",
+                            enum: ["antiga", "medieval", "moderna", "contemporânea"]
+                        }
+                    },
+                    required: ["topic"]
+                }
+            }
+        ]
+    }
+];
+
+// Funções disponíveis
+const availableFunctions = {
+    getCurrentTime: () => {
+        console.log("Executando getCurrentTime");
+        return { currentTime: new Date().toLocaleString() };
+    },
+    searchHistory: (args) => {
+        console.log("Executando searchHistory com args:", args);
+        // Aqui você implementaria a lógica real de pesquisa histórica
+        return {
+            topic: args.topic,
+            period: args.period || "todos os períodos",
+            results: `Informações históricas sobre ${args.topic} no período ${args.period || "todos os períodos"}`
+        };
+    }
+};
+
+// Função para gerar resposta usando Gemini
+async function generateResponse(message, history) {
+    try {
+        console.log('Iniciando geração de resposta com Gemini...');
+        console.log('Mensagem recebida:', message);
+        console.log('Histórico recebido:', JSON.stringify(history, null, 2));
+
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-2.0-flash",
+            tools: tools
+        });
+        
+        // Preparar o histórico no formato que o Gemini espera
+        const formattedHistory = history?.map(msg => ({
+            role: msg.role === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.content }]
+        })) || [];
+
+        console.log('Histórico formatado:', JSON.stringify(formattedHistory, null, 2));
+
+        // Iniciar chat
+        const chat = model.startChat({
+            history: formattedHistory,
+            generationConfig: {
+                maxOutputTokens: 1000,
+                temperature: 0.7,
+            },
+        });
+
+        console.log('Enviando mensagem para o Gemini...');
+        // Gerar resposta
+        const result = await chat.sendMessage(message);
+        console.log('Resposta recebida do Gemini, processando...');
+        const response = await result.response;
+        
+        // Verificar se há chamadas de função
+        const functionCalls = response.functionCalls();
+        if (functionCalls && functionCalls.length > 0) {
+            console.log('Chamada de função detectada:', functionCalls[0]);
+            
+            // Executar a função
+            const functionCall = functionCalls[0];
+            const functionToCall = availableFunctions[functionCall.name];
+            const functionArgs = functionCall.args;
+            
+            // Executar a função
+            const functionResult = functionToCall(functionArgs);
+            console.log('Resultado da função:', functionResult);
+            
+            // Enviar o resultado de volta para o Gemini
+            const resultFromFunctionCall = await chat.sendMessage([
+                {
+                    functionResponse: {
+                        name: functionCall.name,
+                        response: functionResult
+                    }
+                }
+            ]);
+            
+            // Obter a resposta final
+            const finalResponse = await resultFromFunctionCall.response;
+            console.log('Resposta final processada com sucesso');
+            return finalResponse.text();
+        }
+        
+        console.log('Resposta processada com sucesso');
+        return response.text();
+    } catch (error) {
+        console.error('Erro detalhado ao gerar resposta:', error);
+        console.error('Stack trace:', error.stack);
+        if (error.message.includes('API key')) {
+            throw new Error('Erro de autenticação com a API do Google. Verifique sua chave API.');
+        }
+        throw new Error(`Erro ao gerar resposta: ${error.message}`);
+    }
+}
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'chatBot-hist')));
+
+// Rota principal
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'chatBot-hist', 'index.html'));
 });
 
-// Rota para o chat
+// Rota para o chatbot
 app.post('/chat', async (req, res) => {
     try {
-        console.log('Recebida requisição POST para /chat');
-        console.log('Corpo da requisição:', req.body);
-
-        const { message, history = [] } = req.body;
-
+        console.log('Recebida requisição POST em /chat');
+        const { message, history } = req.body;
+        console.log('Corpo da requisição:', { message, history });
+        
         if (!message) {
-            return res.status(400).json({ 
-                error: 'Mensagem não fornecida',
-                type: 'input_error'
-            });
+            throw new Error('Mensagem não fornecida');
         }
-
-        const chat = model.startChat({
-            history: history,
-            generationConfig: {
-                temperature: 0.7,
-                topK: 40,
-                topP: 0.95,
-                maxOutputTokens: 1024,
-            },
-            safetySettings: [
-                {
-                    category: "HARM_CATEGORY_HARASSMENT",
-                    threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                },
-                {
-                    category: "HARM_CATEGORY_HATE_SPEECH",
-                    threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                },
-                {
-                    category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                    threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                },
-                {
-                    category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-                    threshold: "BLOCK_MEDIUM_AND_ABOVE"
-                }
+        
+        // Gerar resposta usando Gemini
+        const botResponse = await generateResponse(message, history);
+        console.log('Resposta gerada com sucesso:', botResponse);
+        
+        const response = {
+            response: botResponse,
+            history: [...(history || []), 
+                { role: 'user', content: message }, 
+                { role: 'assistant', content: botResponse }
             ]
-        });
-
-        const result = await chat.sendMessage(message);
-        const response = await result.response;
-        const text = response.text();
-
-        // Criar novo histórico
-        const newHistory = [
-            ...history,
-            { role: "user", parts: [{ text: message }] },
-            { role: "model", parts: [{ text: text }] }
-        ];
-
-        res.json({ 
-            response: text,
-            history: newHistory
-        });
+        };
+        
+        console.log('Enviando resposta para o cliente');
+        res.json(response);
     } catch (error) {
-        console.error('Erro ao processar mensagem:', error);
-        
-        // Determinar o tipo de erro
-        let errorType = 'api_error';
-        let errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem.';
-        
-        if (error.message.includes('API key')) {
-            errorType = 'auth_error';
-            errorMessage = 'Erro de autenticação com a API. Verifique as configurações do servidor.';
-        } else if (error.message.includes('network')) {
-            errorType = 'network_error';
-            errorMessage = 'Erro de conexão. Verifique sua internet e tente novamente.';
-        } else if (error.message.includes('quota')) {
-            errorType = 'quota_error';
-            errorMessage = 'Limite de requisições excedido. Tente novamente mais tarde.';
-        }
-
+        console.error('Erro detalhado no endpoint /chat:', error);
+        console.error('Stack trace:', error.stack);
         res.status(500).json({ 
-            error: errorMessage,
-            type: errorType
+            error: 'Erro interno do servidor',
+            details: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
         });
     }
 });
 
-// Rota principal
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-// Middleware para tratamento de erros
-app.use((err, req, res, next) => {
-    console.error('Erro no servidor:', err.stack);
-    res.status(500).json({ 
-        error: 'Ocorreu um erro interno no servidor',
-        type: 'server_error'
-    });
-});
-
-// Iniciar servidor
-app.listen(port, () => {
-    console.log(`Servidor rodando em http://localhost:${port}`);
+// Iniciar o servidor
+app.listen(PORT, () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+    console.log('Chave API configurada:', process.env.GOOGLE_API_KEY ? 'Sim' : 'Não');
 }); 
