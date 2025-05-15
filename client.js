@@ -3,9 +3,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const userInput = document.getElementById('user-input');
     const sendButton = document.getElementById('send-button');
     const historyButton = document.getElementById('history-button');
+    const timeButton = document.getElementById('time-button');
+    const weatherButton = document.getElementById('weather-button');
     const historyModal = document.getElementById('history-modal');
+    const weatherModal = document.getElementById('weather-modal');
     const historyContent = document.getElementById('history-content');
     const closeButton = document.querySelector('.close-button');
+    const closeWeatherButton = document.querySelector('.close-weather-button');
+    const cityInput = document.getElementById('city-input');
+    const checkWeatherButton = document.getElementById('check-weather-button');
 
     let chatHistory = []; // Armazenar o histórico da conversa
     let conversationHistory = []; // Armazenar conversas completas
@@ -155,17 +161,40 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function sendMessage() {
+    // Funções para os botões de ação
+    function checkCurrentTime() {
         if (isProcessing) return;
-        
-        const message = userInput.value.trim();
-        if (!message) return;
-
-        // Mostrar mensagem do usuário
-        addMessage(message, true);
-        userInput.value = '';
         setLoading(true);
+        
+        // Simular envio da mensagem do usuário
+        const timeMessage = "Que horas são agora?";
+        addMessage(timeMessage, true);
+        
+        // Enviar ao servidor
+        processBotRequest(timeMessage);
+    }
 
+    function showWeatherModal() {
+        weatherModal.style.display = 'block';
+    }
+
+    function checkWeather() {
+        const city = cityInput.value.trim();
+        if (!city || isProcessing) return;
+        
+        // Fechar o modal
+        weatherModal.style.display = 'none';
+        
+        // Simular envio da mensagem do usuário
+        const weatherMessage = `Como está o tempo em ${city}?`;
+        addMessage(weatherMessage, true);
+        setLoading(true);
+        
+        // Enviar ao servidor
+        processBotRequest(weatherMessage);
+    }
+
+    async function processBotRequest(message) {
         try {
             console.log('Enviando mensagem para o servidor:', message);
             console.log('Histórico atual:', chatHistory);
@@ -226,6 +255,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    async function sendMessage() {
+        if (isProcessing) return;
+        
+        const message = userInput.value.trim();
+        if (!message) return;
+
+        // Mostrar mensagem do usuário
+        addMessage(message, true);
+        userInput.value = '';
+        setLoading(true);
+
+        // Processar a mensagem
+        processBotRequest(message);
+    }
+
     // Event listeners
     sendButton.addEventListener('click', sendMessage);
     userInput.addEventListener('keypress', (e) => {
@@ -244,9 +288,25 @@ document.addEventListener('DOMContentLoaded', () => {
         historyModal.style.display = 'none';
     });
 
+    // Botões de ação
+    timeButton.addEventListener('click', checkCurrentTime);
+    weatherButton.addEventListener('click', showWeatherModal);
+    checkWeatherButton.addEventListener('click', checkWeather);
+    cityInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            checkWeather();
+        }
+    });
+    closeWeatherButton.addEventListener('click', () => {
+        weatherModal.style.display = 'none';
+    });
+
     window.addEventListener('click', (e) => {
         if (e.target === historyModal) {
             historyModal.style.display = 'none';
+        }
+        if (e.target === weatherModal) {
+            weatherModal.style.display = 'none';
         }
     });
 

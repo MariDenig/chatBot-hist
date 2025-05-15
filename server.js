@@ -3,6 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const fs = require('fs');
+const axios = require('axios');
 
 // Verificar se o arquivo .env existe
 const envPath = path.join(__dirname, '.env');
@@ -64,6 +65,20 @@ const tools = [
                     },
                     required: ["topic"]
                 }
+            },
+            {
+                name: "getWeather",
+                description: "Obtém a previsão do tempo atual para uma cidade específica.",
+                parameters: {
+                    type: "object",
+                    properties: {
+                        location: {
+                            type: "string",
+                            description: "A cidade para a qual obter a previsão do tempo (ex: 'Curitiba, BR')."
+                        }
+                    },
+                    required: ["location"]
+                }
             }
         ]
     }
@@ -83,6 +98,34 @@ const availableFunctions = {
             period: args.period || "todos os períodos",
             results: `Informações históricas sobre ${args.topic} no período ${args.period || "todos os períodos"}`
         };
+    },
+    getWeather: async (args) => {
+        console.log("Executando getWeather com args:", args);
+        const location = args.location;
+        const apiKey = process.env.OPENWEATHER_API_KEY;
+        if (!apiKey) {
+            console.error("Chave da API OpenWeatherMap não configurada.");
+            return { error: "Chave da API OpenWeatherMap não configurada." };
+        }
+        
+        try {
+            const url = `https://api.openweathermap.org/data/2.5/weather?q=${location}&appid=${apiKey}&units=metric&lang=pt_br`;
+            const response = await axios.get(url);
+            
+            return {
+                location: response.data.name,
+                temperature: `${response.data.main.temp}°C`,
+                description: response.data.weather[0].description,
+                feels_like: `${response.data.main.feels_like}°C`,
+                humidity: `${response.data.main.humidity}%`,
+                wind_speed: `${response.data.wind.speed} m/s`
+            };
+        } catch (error) {
+            console.error("Erro ao chamar OpenWeatherMap:", error.response?.data || error.message);
+            return { 
+                error: error.response?.data?.message || "Não foi possível obter o tempo para esta localização." 
+            };
+        }
     }
 };
 
@@ -124,31 +167,67 @@ async function generateResponse(message, history) {
         // Verificar se há chamadas de função
         const functionCalls = response.functionCalls();
         if (functionCalls && functionCalls.length > 0) {
-            console.log('Chamada de função detectada:', functionCalls[0]);
+            console.log(`Detectadas ${functionCalls.length} chamadas de função`);
             
-            // Executar a função
-            const functionCall = functionCalls[0];
-            const functionToCall = availableFunctions[functionCall.name];
-            const functionArgs = functionCall.args;
+            // Processa todas as chamadas de função uma por uma
+            let currentResponse = response;
             
-            // Executar a função
-            const functionResult = functionToCall(functionArgs);
-            console.log('Resultado da função:', functionResult);
-            
-            // Enviar o resultado de volta para o Gemini
-            const resultFromFunctionCall = await chat.sendMessage([
-                {
-                    functionResponse: {
-                        name: functionCall.name,
-                        response: functionResult
-                    }
+            for (const functionCall of functionCalls) {
+                console.log('Processando chamada de função:', functionCall.name);
+                
+                // Obter a função correspondente
+                const functionName = functionCall.name;
+                const functionToCall = availableFunctions[functionName];
+                
+                if (!functionToCall) {
+                    console.error(`Função ${functionName} não implementada`);
+                    continue;
                 }
-            ]);
+                
+                const functionArgs = functionCall.args;
+                
+                try {
+                    // Executar a função (que pode ser assíncrona)
+                    console.log(`Executando ${functionName} com args:`, functionArgs);
+                    const functionResult = await functionToCall(functionArgs);
+                    console.log(`Resultado de ${functionName}:`, functionResult);
+                    
+                    // Enviar o resultado de volta para o Gemini
+                    const resultFromFunctionCall = await chat.sendMessage([
+                        {
+                            functionResponse: {
+                                name: functionName,
+                                response: functionResult
+                            }
+                        }
+                    ]);
+                    
+                    // Atualizar a resposta atual
+                    currentResponse = await resultFromFunctionCall.response;
+                    
+                    // Verificar se há mais chamadas de função na resposta atual
+                    const moreFunctionCalls = currentResponse.functionCalls();
+                    if (moreFunctionCalls && moreFunctionCalls.length > 0) {
+                        console.log(`Detectadas mais ${moreFunctionCalls.length} chamadas de função na resposta`);
+                        // Elas serão processadas na próxima iteração
+                    }
+                } catch (error) {
+                    console.error(`Erro ao executar a função ${functionName}:`, error);
+                    // Informar o Gemini sobre o erro
+                    const errorResponse = await chat.sendMessage([
+                        {
+                            functionResponse: {
+                                name: functionName,
+                                response: { error: error.message || "Erro ao executar a função" }
+                            }
+                        }
+                    ]);
+                    currentResponse = await errorResponse.response;
+                }
+            }
             
-            // Obter a resposta final
-            const finalResponse = await resultFromFunctionCall.response;
             console.log('Resposta final processada com sucesso');
-            return finalResponse.text();
+            return currentResponse.text();
         }
         
         console.log('Resposta processada com sucesso');
@@ -166,11 +245,11 @@ async function generateResponse(message, history) {
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'chatBot-hist')));
+app.use(express.static(path.join(__dirname, '')));
 
 // Rota principal
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'chatBot-hist', 'index.html'));
+    res.sendFile(path.join(__dirname, '', 'index.html'));
 });
 
 // Rota para o chatbot
@@ -188,6 +267,10 @@ app.post('/chat', async (req, res) => {
         const botResponse = await generateResponse(message, history);
         console.log('Resposta gerada com sucesso:', botResponse);
         
+        // Atualizar o histórico de conversação
+        // Nota: Aqui estamos simplificando o histórico para o frontend
+        // Na realidade, também deveria incluir as chamadas de função e respostas
+        // para manter o contexto completo, mas isso tornaria a interface mais complexa
         const response = {
             response: botResponse,
             history: [...(history || []), 
