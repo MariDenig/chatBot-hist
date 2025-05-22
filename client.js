@@ -312,4 +312,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Focar no input ao carregar a página
     userInput.focus();
-}); 
+});
+
+app.post('/chat', (req, res) => {
+    const { message } = req.body;
+    if (/que horas|horário|hora/i.test(message)) {
+        // Horário do servidor (UTC por padrão no Render)
+        const now = new Date();
+        // Ajuste para o fuso desejado, se necessário
+        const horaServidor = now.toLocaleString('pt-BR', { timeZone: 'UTC' });
+        return res.json({
+            response: `O horário atual do servidor é: ${horaServidor}`,
+            history: req.body.history || []
+        });
+    }
+    // ...processamento normal do bot...
+});
