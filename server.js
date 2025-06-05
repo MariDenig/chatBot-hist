@@ -202,10 +202,14 @@ async function generateResponse(message, history) {
 
         // Verificar se é uma solicitação de clima
         if (message.toLowerCase().includes('clima') || message.toLowerCase().includes('tempo')) {
-            // Extrair a localização da mensagem (exemplo simples)
-            const locationMatch = message.match(/em\s+([^,.]+)/i);
-            const location = locationMatch ? locationMatch[1].trim() : 'Curitiba, BR';
-            console.log('Localização extraída:', location);
+            // Extrair a localização da mensagem com melhor tratamento
+            const locationMatch = message.match(/em\s+([^,.?!]+)/i);
+            let location = locationMatch ? locationMatch[1].trim() : 'Curitiba, BR';
+            
+            // Remover caracteres especiais e pontuação
+            location = location.replace(/[.,!?]/g, '').trim();
+            
+            console.log('Localização extraída e limpa:', location);
             
             const weatherResult = await availableFunctions.getWeather({ location });
             if (weatherResult.error) {
