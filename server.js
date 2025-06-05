@@ -103,27 +103,86 @@ const availableFunctions = {
         console.log("Executando getWeather com args:", args);
         const location = args.location;
         const apiKey = process.env.OPENWEATHER_API_KEY;
+        
         if (!apiKey) {
             console.error("Chave da API OpenWeatherMap não configurada.");
-            return { error: "Chave da API OpenWeatherMap não configurada." };
+            return { 
+                error: "Não foi possível verificar o clima porque a chave da API OpenWeatherMap não está configurada. Por favor, adicione OPENWEATHER_API_KEY=sua_chave no arquivo .env" 
+            };
         }
+
+        // Função auxiliar para fazer a requisição
+        const makeWeatherRequest = async (searchLocation) => {
+            const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(searchLocation)}&appid=${apiKey}&units=metric&lang=pt_br`;
+            console.log('Fazendo requisição para:', url);
+            const response = await axios.get(url);
+            console.log('Resposta da API:', response.data);
+            return response;
+        };
         
         try {
-            const url = `https://api.openweathermap.org/data/2.5/weather?q=${location}&appid=${apiKey}&units=metric&lang=pt_br`;
-            const response = await axios.get(url);
+            // Primeira tentativa: com o país
+            const formattedLocation = location.includes(', BR') ? location : `${location}, BR`;
+            console.log('Primeira tentativa - Buscando clima para:', formattedLocation);
             
-            return {
-                location: response.data.name,
-                temperature: `${response.data.main.temp}°C`,
-                description: response.data.weather[0].description,
-                feels_like: `${response.data.main.feels_like}°C`,
-                humidity: `${response.data.main.humidity}%`,
-                wind_speed: `${response.data.wind.speed} m/s`
-            };
+            try {
+                const response = await makeWeatherRequest(formattedLocation);
+                if (!response.data || !response.data.main) {
+                    throw new Error('Dados do clima não disponíveis');
+                }
+
+                return {
+                    location: response.data.name,
+                    temperature: `${Math.round(response.data.main.temp)}°C`,
+                    description: response.data.weather[0].description,
+                    feels_like: `${Math.round(response.data.main.feels_like)}°C`,
+                    humidity: `${response.data.main.humidity}%`,
+                    wind_speed: `${response.data.wind.speed} m/s`
+                };
+            } catch (firstError) {
+                console.log('Primeira tentativa falhou:', firstError.message);
+                
+                // Segunda tentativa: sem o país
+                console.log('Segunda tentativa - Buscando clima para:', location);
+                const retryResponse = await makeWeatherRequest(location);
+                
+                if (!retryResponse.data || !retryResponse.data.main) {
+                    throw new Error('Dados do clima não disponíveis');
+                }
+
+                return {
+                    location: retryResponse.data.name,
+                    temperature: `${Math.round(retryResponse.data.main.temp)}°C`,
+                    description: retryResponse.data.weather[0].description,
+                    feels_like: `${Math.round(retryResponse.data.main.feels_like)}°C`,
+                    humidity: `${retryResponse.data.main.humidity}%`,
+                    wind_speed: `${retryResponse.data.wind.speed} m/s`
+                };
+            }
         } catch (error) {
-            console.error("Erro ao chamar OpenWeatherMap:", error.response?.data || error.message);
+            console.error("Erro detalhado ao chamar OpenWeatherMap:", error);
+            console.error("Resposta de erro:", error.response?.data);
+            
+            if (error.response?.status === 404) {
+                return { 
+                    error: `Não foi possível encontrar informações sobre o clima para "${location}". Por favor, verifique se o nome da cidade está correto e tente novamente.` 
+                };
+            }
+            
+            if (error.response?.status === 401) {
+                return { 
+                    error: "Não foi possível verificar o clima porque a chave da API OpenWeatherMap é inválida. Por favor, verifique sua chave API." 
+                };
+            }
+
+            if (error.response?.status === 429) {
+                return {
+                    error: "Limite de requisições excedido. Por favor, aguarde alguns minutos e tente novamente."
+                };
+            }
+
             return { 
-                error: error.response?.data?.message || "Não foi possível obter o tempo para esta localização." 
+                error: `Desculpe, ocorreu um erro ao tentar obter o clima para "${location}". Detalhes: ${error.message}. Por favor, tente novamente em alguns instantes.` 
             };
         }
     }
@@ -132,112 +191,68 @@ const availableFunctions = {
 // Função para gerar resposta usando Gemini
 async function generateResponse(message, history) {
     try {
-        console.log('Iniciando geração de resposta com Gemini...');
+        console.log('Iniciando geração de resposta...');
         console.log('Mensagem recebida:', message);
-        console.log('Histórico recebido:', JSON.stringify(history, null, 2));
 
+        // Verificar se é uma solicitação de tempo
+        if (message.toLowerCase().includes('horas') || message.toLowerCase().includes('hora atual')) {
+            const timeResult = availableFunctions.getCurrentTime();
+            return `A hora atual é: ${timeResult.currentTime}`;
+        }
+
+        // Verificar se é uma solicitação de clima
+        if (message.toLowerCase().includes('clima') || message.toLowerCase().includes('tempo')) {
+            // Extrair a localização da mensagem (exemplo simples)
+            const locationMatch = message.match(/em\s+([^,.]+)/i);
+            const location = locationMatch ? locationMatch[1].trim() : 'Curitiba, BR';
+            console.log('Localização extraída:', location);
+            
+            const weatherResult = await availableFunctions.getWeather({ location });
+            if (weatherResult.error) {
+                return weatherResult.error;
+            }
+            return `Clima em ${weatherResult.location}:\nTemperatura: ${weatherResult.temperature}\nSensação térmica: ${weatherResult.feels_like}\nCondição: ${weatherResult.description}\nUmidade: ${weatherResult.humidity}\nVelocidade do vento: ${weatherResult.wind_speed}`;
+        }
+
+        // Se não for uma função especial, usar o Gemini
+        console.log('Usando Gemini para resposta...');
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash",
-            tools: tools
-        });
-        
-        // Preparar o histórico no formato que o Gemini espera
-        const formattedHistory = history?.map(msg => ({
-            role: msg.role === 'user' ? 'user' : 'model',
-            parts: [{ text: msg.content }]
-        })) || [];
-
-        console.log('Histórico formatado:', JSON.stringify(formattedHistory, null, 2));
-
-        // Iniciar chat
-        const chat = model.startChat({
-            history: formattedHistory,
-            generationConfig: {
-                maxOutputTokens: 1000,
-                temperature: 0.7,
-            },
+            model: "gemini-2.0-flash"
         });
 
-        console.log('Enviando mensagem para o Gemini...');
+        // Preparar o prompt
+        const prompt = `Você é um historiador especializado. Responda à seguinte pergunta de forma detalhada e precisa:
+${message}`;
+
         // Gerar resposta
-        const result = await chat.sendMessage(message);
-        console.log('Resposta recebida do Gemini, processando...');
+        const result = await model.generateContent(prompt);
         const response = await result.response;
         
-        // Verificar se há chamadas de função
-        const functionCalls = response.functionCalls();
-        if (functionCalls && functionCalls.length > 0) {
-            console.log(`Detectadas ${functionCalls.length} chamadas de função`);
-            
-            // Processa todas as chamadas de função uma por uma
-            let currentResponse = response;
-            
-            for (const functionCall of functionCalls) {
-                console.log('Processando chamada de função:', functionCall.name);
-                
-                // Obter a função correspondente
-                const functionName = functionCall.name;
-                const functionToCall = availableFunctions[functionName];
-                
-                if (!functionToCall) {
-                    console.error(`Função ${functionName} não implementada`);
-                    continue;
-                }
-                
-                const functionArgs = functionCall.args;
-                
-                try {
-                    // Executar a função (que pode ser assíncrona)
-                    console.log(`Executando ${functionName} com args:`, functionArgs);
-                    const functionResult = await functionToCall(functionArgs);
-                    console.log(`Resultado de ${functionName}:`, functionResult);
-                    
-                    // Enviar o resultado de volta para o Gemini
-                    const resultFromFunctionCall = await chat.sendMessage([
-                        {
-                            functionResponse: {
-                                name: functionName,
-                                response: functionResult
-                            }
-                        }
-                    ]);
-                    
-                    // Atualizar a resposta atual
-                    currentResponse = await resultFromFunctionCall.response;
-                    
-                    // Verificar se há mais chamadas de função na resposta atual
-                    const moreFunctionCalls = currentResponse.functionCalls();
-                    if (moreFunctionCalls && moreFunctionCalls.length > 0) {
-                        console.log(`Detectadas mais ${moreFunctionCalls.length} chamadas de função na resposta`);
-                        // Elas serão processadas na próxima iteração
-                    }
-                } catch (error) {
-                    console.error(`Erro ao executar a função ${functionName}:`, error);
-                    // Informar o Gemini sobre o erro
-                    const errorResponse = await chat.sendMessage([
-                        {
-                            functionResponse: {
-                                name: functionName,
-                                response: { error: error.message || "Erro ao executar a função" }
-                            }
-                        }
-                    ]);
-                    currentResponse = await errorResponse.response;
-                }
-            }
-            
-            console.log('Resposta final processada com sucesso');
-            return currentResponse.text();
+        console.log('Resposta do Gemini:', response);
+
+        // Extrair o texto da resposta
+        if (response.text) {
+            return response.text();
         }
-        
-        console.log('Resposta processada com sucesso');
-        return response.text();
+
+        // Se não encontrar o texto diretamente, tentar outras estruturas
+        if (response.candidates && response.candidates[0]) {
+            const candidate = response.candidates[0];
+            if (candidate.content && candidate.content.parts && candidate.content.parts[0]) {
+                return candidate.content.parts[0].text;
+            }
+        }
+
+        throw new Error('Não foi possível extrair a resposta do Gemini');
+
     } catch (error) {
         console.error('Erro detalhado ao gerar resposta:', error);
         console.error('Stack trace:', error.stack);
+        
         if (error.message.includes('API key')) {
             throw new Error('Erro de autenticação com a API do Google. Verifique sua chave API.');
         }
+        
         throw new Error(`Erro ao gerar resposta: ${error.message}`);
     }
 }
@@ -257,20 +272,16 @@ app.post('/chat', async (req, res) => {
     try {
         console.log('Recebida requisição POST em /chat');
         const { message, history } = req.body;
-        console.log('Corpo da requisição:', { message, history });
         
         if (!message) {
-            throw new Error('Mensagem não fornecida');
+            return res.status(400).json({ 
+                error: 'Mensagem não fornecida',
+                details: 'Por favor, digite uma mensagem para que eu possa ajudá-lo.'
+            });
         }
-        
-        // Gerar resposta usando Gemini
+
         const botResponse = await generateResponse(message, history);
-        console.log('Resposta gerada com sucesso:', botResponse);
         
-        // Atualizar o histórico de conversação
-        // Nota: Aqui estamos simplificando o histórico para o frontend
-        // Na realidade, também deveria incluir as chamadas de função e respostas
-        // para manter o contexto completo, mas isso tornaria a interface mais complexa
         const response = {
             response: botResponse,
             history: [...(history || []), 
@@ -278,16 +289,25 @@ app.post('/chat', async (req, res) => {
                 { role: 'assistant', content: botResponse }
             ]
         };
-        
-        console.log('Enviando resposta para o cliente');
+
         res.json(response);
+
     } catch (error) {
-        console.error('Erro detalhado no endpoint /chat:', error);
-        console.error('Stack trace:', error.stack);
+        console.error('Erro no endpoint /chat:', error);
+        let errorMessage = 'Desculpe, ocorreu um erro ao processar sua solicitação.';
+        let errorDetails = 'Por favor, tente novamente mais tarde.';
+
+        if (error.message.includes('API key')) {
+            errorMessage = 'Erro de configuração do sistema';
+            errorDetails = 'A chave da API do Google não está configurada corretamente. Por favor, verifique o arquivo .env.';
+        } else if (error.message.includes('Failed to fetch')) {
+            errorMessage = 'Erro de conexão';
+            errorDetails = 'Não foi possível conectar ao servidor. Por favor, verifique se o servidor está rodando e tente novamente.';
+        }
+
         res.status(500).json({ 
-            error: 'Erro interno do servidor',
-            details: error.message,
-            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+            error: errorMessage,
+            details: errorDetails
         });
     }
 });
