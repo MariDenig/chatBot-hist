@@ -264,19 +264,93 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function sendMessage() {
-        if (isProcessing) return;
-        
-        const message = userInput.value.trim();
-        if (!message) return;
+    // Função para obter o IP do usuário
+    async function getUserIP() {
+        try {
+            const response = await fetch('https://api.ipify.org?format=json');
+            const data = await response.json();
+            return data.ip;
+        } catch (error) {
+            console.error('Erro ao obter IP:', error);
+            return '127.0.0.1'; // IP local como fallback
+        }
+    }
 
-        // Mostrar mensagem do usuário
+    // Função para registrar conexão do usuário
+    async function registrarConexaoUsuario(acao) {
+        try {
+            const ip = await getUserIP();
+            const logData = {
+                ip: ip,
+                acao: acao
+            };
+
+            const response = await fetch('/api/log-connection', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(logData)
+            });
+
+            if (!response.ok) {
+                throw new Error('Falha ao registrar log');
+            }
+
+            console.log('Log registrado com sucesso');
+        } catch (error) {
+            console.error('Erro ao registrar log:', error);
+        }
+    }
+
+    // Função para registrar acesso ao bot para ranking
+    async function registrarAcessoBotParaRanking() {
+        try {
+            const dataRanking = {
+                botId: "chatbotHistoriador",
+                nomeBot: "Chatbot Historiador",
+                timestampAcesso: new Date().toISOString()
+            };
+
+            const response = await fetch('/api/ranking/registrar-acesso-bot', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(dataRanking)
+            });
+
+            if (!response.ok) {
+                throw new Error('Falha ao registrar acesso para ranking');
+            }
+
+            console.log('Acesso registrado para ranking');
+        } catch (error) {
+            console.error('Erro ao registrar acesso para ranking:', error);
+        }
+    }
+
+    // Registrar acesso inicial
+    registrarConexaoUsuario('acesso_inicial_chatbot_Mari');
+    registrarAcessoBotParaRanking();
+
+    // Modificar a função sendMessage para registrar logs
+    async function sendMessage() {
+        const message = userInput.value.trim();
+        if (!message || isProcessing) return;
+
+        setLoading(true);
         addMessage(message, true);
         userInput.value = '';
-        setLoading(true);
 
-        // Processar a mensagem
-        processBotRequest(message);
+        try {
+            await registrarConexaoUsuario('enviou_mensagem_chatbot');
+            await processBotRequest(message);
+        } catch (error) {
+            handleError(error, 'server_error');
+        } finally {
+            setLoading(false);
+        }
     }
 
     // Event listeners
