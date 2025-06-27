@@ -320,6 +320,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(dataRanking)
             });
 
+            const responseLog = await fetch('/api/log-connection', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(dataRanking)
+            });
+
+
             if (!response.ok) {
                 throw new Error('Falha ao registrar acesso para ranking');
             }

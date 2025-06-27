@@ -30,6 +30,8 @@ async function testarRegistroLog() {
 
 // Adicionar o evento de clique ao botão quando o documento estiver carregado
 document.addEventListener('DOMContentLoaded', () => {
+
+    testarRegistroLog();
     const testLogButton = document.getElementById('testLogButton');
     if (testLogButton) {
         testLogButton.addEventListener('click', testarRegistroLog);

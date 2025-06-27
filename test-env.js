@@ -14,6 +14,6 @@ if (fs.existsSync(envPath)) {
 }
 
 console.log('\nVariáveis carregadas:');
-console.log('MONGO_URI:', process.env.MONGO_URI ? 'Definida' : 'Não definida');
+console.log('MONGO_URI_mari:', process.env.MONGO_URI_mari ? 'Definida' : 'Não definida');
 console.log('GOOGLE_API_KEY:', process.env.GOOGLE_API_KEY ? 'Definida' : 'Não definida');
 console.log('NODE_ENV:', process.env.NODE_ENV); 

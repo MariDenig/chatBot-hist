@@ -6,6 +6,7 @@ const fs = require('fs');
 const axios = require('axios');
 const { MongoClient } = require('mongodb');
 const mongoose = require('mongoose');
+const mongooseProf = require('mongoose');
 
 // Verificar se o arquivo .env existe
 const envPath = path.join(__dirname, '.env');
@@ -18,11 +19,12 @@ require('dotenv').config();
 console.log('Variáveis de ambiente carregadas:', {
     GOOGLE_API_KEY: process.env.GOOGLE_API_KEY ? 'Definida' : 'Não definida',
     NODE_ENV: process.env.NODE_ENV,
-    MONGO_URI: process.env.MONGO_URI ? 'Definida' : 'Não definida'
+    MONGO_URI: process.env.MONGO_URI_mari ? 'Definida' : 'Não definida'
 });
 
 // Configuração do MongoDB com Mongoose
-const mongoUri = process.env.MONGO_URI || 'mongodb+srv://user_log_acess:Log4c3ss2025@cluster0.nbt3sks.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
+const mongoUri = process.env.MONGO_URI_mari;
+const mongoUriProf = process.env.MONGO_URI_prof || 'mongodb+srv://user_log_acess:Log4c3ss2025@cluster0.nbt3sks.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0';
 
 // Definir o Schema para os logs de acesso
 const LogAcessoSchema = new mongoose.Schema({
@@ -37,6 +39,36 @@ const LogAcessoSchema = new mongoose.Schema({
 // Criar o Model
 const LogAcesso = mongoose.model('LogAcesso', LogAcessoSchema, 'tb_cl_user_log_acess');
 
+// Conexão separada para o banco do professor
+let isProfConnected = false;
+let ProfLogAcesso;
+async function connectProfDB() {
+    if (!isProfConnected) {
+        try {
+            await mongooseProf.connect(process.env.MONGO_URI_prof, {
+                useNewUrlParser: true,
+                useUnifiedTopology: true,
+                dbName: 'IIW2023A_Logs'
+            });
+            isProfConnected = true;
+            // Schema simples para logs de acesso
+            const ProfLogAcessoSchema = new mongooseProf.Schema({
+                col_data: String,
+                col_hora: String,
+                col_IP: String,
+                col_nome_bot: String,
+                col_acao: String,
+                timestamp: { type: Date, default: Date.now }
+            });
+            ProfLogAcesso = mongooseProf.model('ProfLogAcesso', ProfLogAcessoSchema, 'tb_cl_user_log_acess');
+            console.log('Conectado ao MongoDB do professor!');
+        } catch (err) {
+            isProfConnected = false;
+            console.error('Erro ao conectar ao MongoDB do professor:', err);
+        }
+    }
+}
+
 // Array para simular o armazenamento do ranking
 let dadosRankingVitrine = [];
 let isMongoConnected = false;
@@ -44,9 +76,9 @@ let isMongoConnected = false;
 async function connectDB() {
     try {
         if (!isMongoConnected) {
-            console.log('Tentando conectar ao MongoDB com URI:', process.env.MONGO_URI);
+            console.log('Tentando conectar ao MongoDB com URI:', process.env.MONGO_URI_mari);
             
-            await mongoose.connect(process.env.MONGO_URI, {
+            await mongoose.connect(process.env.MONGO_URI_mari, {
                 useNewUrlParser: true,
                 useUnifiedTopology: true
             });
@@ -79,8 +111,7 @@ if (!process.env.GOOGLE_API_KEY) {
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
 
 // Definir as ferramentas disponíveis
-const tools = [
-    {
+const tools = [    {
         functionDeclarations: [
             {
                 name: "getCurrentTime",
@@ -417,19 +448,41 @@ app.post('/chat', async (req, res) => {
 
 // Endpoint para registrar logs de acesso
 app.post('/api/log-connection', async (req, res) => {
-    try {
-        const { ip, acao, nomeBot } = req.body;
+    const { ip, acao, nomeBot } = req.body;
+    const agora = new Date();
+    const dataFormatada = agora.toISOString().split('T')[0];
+    const horaFormatada = agora.toTimeString().split(' ')[0];
 
-        if (!ip || !acao || !nomeBot) {
-            return res.status(400).json({ 
-                error: "Dados de log incompletos (IP, ação e nome do bot são obrigatórios)." 
-            });
+    // Sempre tenta registrar no banco do professor, mesmo com campos faltando
+    await connectProfDB();
+    if (isProfConnected && ProfLogAcesso) {
+        const profLog = new ProfLogAcesso({
+            col_data: dataFormatada,
+            col_hora: horaFormatada,
+            col_IP: ip || 'desconhecido',
+            col_nome_bot: nomeBot || 'desconhecido',
+            col_acao: acao || 'desconhecido'
+        });
+        try {
+            await profLog.save();
+            console.log('Log também registrado no banco do professor!');
+        } catch (err) {
+            console.warn('Não foi possível registrar log no banco do professor:', err);
         }
+    } else {
+        console.warn('Não foi possível conectar ao banco do professor.');
+    }
 
-        const agora = new Date();
-        const dataFormatada = agora.toISOString().split('T')[0];
-        const horaFormatada = agora.toTimeString().split(' ')[0];
+    // Validação para o banco principal
+    if (!ip || !acao || !nomeBot) {
+        return res.status(400).json({ 
+            error: "Dados de log incompletos (IP, ação e nome do bot são obrigatórios)." 
+        });
+    } else {
+        console.log('Dados de log completos:', req.body);
+    }
 
+    try {
         const novoLog = new LogAcesso({
             col_data: dataFormatada,
             col_hora: horaFormatada,
@@ -437,10 +490,8 @@ app.post('/api/log-connection', async (req, res) => {
             col_nome_bot: 'Mari_Chatbot',
             col_acao: acao
         });
-
         await novoLog.save();
-        console.log('Log registrado com sucesso:', novoLog);
-        
+        console.log('Log registrado com sucesso Mari_Chatbot:', novoLog);
         res.status(201).json({ 
             message: 'Log registrado com sucesso',
             data: novoLog
@@ -464,7 +515,7 @@ app.post('/api/ranking/registrar-acesso-bot', (req, res) => {
 
     const acesso = {
         botId,
-        nomeBot,
+        nomeBot: "Mari_Chatbot",
         usuarioId: usuarioId || 'anonimo',
         acessoEm: timestampAcesso ? new Date(timestampAcesso) : new Date(),
         contagem: 1
@@ -626,8 +677,8 @@ const server = app.listen(PORT, async () => {
         console.log('Tentando conectar ao MongoDB...');
         
         // Verificar se a string de conexão está definida
-        if (!process.env.MONGO_URI) {
-            throw new Error('MONGO_URI não está definida no arquivo .env');
+        if (!process.env.MONGO_URI_mari) {
+            throw new Error('MONGO_URI_mari não está definida no arquivo .env');
         }
         
         await connectDB();
