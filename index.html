@@ -8,60 +8,80 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
-    <div class="chat-container">
-        <div class="chat-header">
-            <h1>Chatbot Historiador</h1>
-            <div class="header-buttons">
-                <button id="time-button" class="action-button" title="Verificar horário atual">
-                    <i class="fas fa-clock"></i>
-                </button>
-                <button id="weather-button" class="action-button" title="Verificar clima">
-                    <i class="fas fa-cloud-sun"></i>
-                </button>
-                <button id="history-button" class="history-button">
-                    <i class="fas fa-history"></i>
-                </button>
+    <div id="chat-e-info">
+        <div class="chat-container">
+            <div class="chat-header">
+                <h1>Chatbot Historiador</h1>
+                <div class="header-buttons">
+                    <button id="time-button" class="action-button" title="Verificar horário atual">
+                        <i class="fas fa-clock"></i>
+                    </button>
+                    <button id="weather-button" class="action-button" title="Verificar clima">
+                        <i class="fas fa-cloud-sun"></i>
+                    </button>
+                    <button id="history-button" class="history-button">
+                        <i class="fas fa-history"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <!-- Mensagens serão inseridas aqui -->
+            </div>
+            <div class="chat-input-container">
+                <input type="text" id="user-input" placeholder="Digite sua pergunta sobre história...">
+                <button id="send-button">Enviar</button>
             </div>
         </div>
-        <div class="chat-messages" id="chat-messages">
-            <!-- Mensagens serão inseridas aqui -->
-        </div>
-        <div class="chat-input-container">
-            <input type="text" id="user-input" placeholder="Digite sua pergunta sobre história...">
-            <button id="send-button">Enviar</button>
-        </div>
-    </div>
 
-    <!-- Modal de Histórico -->
-    <div id="history-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Histórico de Conversas</h2>
-                <button class="close-button">&times;</button>
-            </div>
-            <div class="modal-body" id="history-content">
-                <!-- Histórico será inserido aqui -->
-            </div>
-        </div>
-    </div>
-
-    <!-- Modal de Clima -->
-    <div id="weather-modal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>Verificar Clima</h2>
-                <button class="close-weather-button">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="input-group">
-                    <input type="text" id="city-input" placeholder="Digite o nome da cidade...">
-                    <button id="check-weather-button">Verificar</button>
+        <!-- Modal de Histórico -->
+        <div id="history-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Histórico de Conversas</h2>
+                    <button class="close-button">&times;</button>
+                </div>
+                <div class="modal-body" id="history-content">
+                    <!-- Histórico será inserido aqui -->
                 </div>
             </div>
         </div>
+
+        <!-- Modal de Clima -->
+        <div id="weather-modal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2>Verificar Clima</h2>
+                    <button class="close-weather-button">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="input-group">
+                        <input type="text" id="city-input" placeholder="Digite o nome da cidade...">
+                        <button id="check-weather-button">Verificar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <aside id="info-bot-container">
+            <h2>🤖 <span id="nome-bot-display">Assistente Gemini IFPR</span> 🤖</h2>
+            <p id="slogan-bot-display"><em>Seu companheiro inteligente para dúvidas e aprendizado!</em></p>
+            <div id="descricao-bot-display">
+                <p>O Assistente Gemini IFPR é um chatbot desenvolvido para ajudar alunos e curiosos a obter respostas rápidas sobre história, clima, horário e muito mais, usando a poderosa API Gemini da Google.</p>
+                <p>Além disso, registra acessos e interações de forma segura, promovendo aprendizado e tecnologia no IFPR.</p>
+            </div>
+            <div id="autoria-bot">
+                <p><strong>Autora:</strong></p>
+                <div class="autora-info">
+                    <img id="foto-autora" src="autora.jpg" alt="Foto da autora" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #1976d2;">
+                    <div class="contatos-autora">
+                        <p><strong>Mariani Denig</strong></p>
+                        <p>Email: <a href="mailto:marianileme10@gmail.com">marianileme10@gmail.com</a></p>
+                        <p>instagram <a href="https://www.instagram.com/mari.denig/" target="_blank">/maridenig</a></p>
+                    </div>
+                </div>
+            </div>
+        </aside>
     </div>
-
-
 
     <script src="/client.js"></script>
 </body>
