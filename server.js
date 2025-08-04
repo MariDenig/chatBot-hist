@@ -7,6 +7,7 @@ const axios = require('axios');
 const { MongoClient } = require('mongodb');
 const mongoose = require('mongoose');
 const mongooseProf = require('mongoose');
+const SessaoChat = require('./models/SessaoChat');
 
 // Verificar se o arquivo .env existe
 const envPath = path.join(__dirname, '.env');
@@ -90,7 +91,10 @@ async function connectDB() {
     } catch (error) {
         isMongoConnected = false;
         console.error('Erro detalhado ao conectar ao MongoDB:', error);
-        throw error;
+        console.log('⚠️  AVISO: Servidor continuará funcionando sem MongoDB. Algumas funcionalidades podem não estar disponíveis.');
+        console.log('💡 Para resolver: Adicione seu IP à whitelist do MongoDB Atlas');
+        // Não lança erro para permitir que o servidor continue
+        return null;
     }
 }
 
@@ -275,10 +279,16 @@ async function generateResponse(message, history) {
             return `A hora atual é: ${timeResult.currentTime}`;
         }
 
-        // Verificar se é uma solicitação de clima
-        if (message.toLowerCase().includes('clima') || message.toLowerCase().includes('tempo')) {
+        // Verificar se é uma solicitação de clima (mais específica)
+        const climaKeywords = ['clima', 'tempo', 'temperatura', 'previsão do tempo', 'como está o tempo'];
+        const isClimaRequest = climaKeywords.some(keyword => 
+            message.toLowerCase().includes(keyword) && 
+            (message.toLowerCase().includes('em ') || message.toLowerCase().includes('para '))
+        );
+        
+        if (isClimaRequest) {
             // Extrair a localização da mensagem com melhor tratamento
-            const locationMatch = message.match(/em\s+([^,.?!]+)/i);
+            const locationMatch = message.match(/(?:em|para)\s+([^,.?!]+)/i);
             let location = locationMatch ? locationMatch[1].trim() : 'Curitiba, BR';
             
             // Remover caracteres especiais e pontuação
@@ -399,21 +409,61 @@ app.post('/chat', async (req, res) => {
             tipo = 'historico';
         }
 
-        // Salvar a interação no histórico
+        // Salvar a interação no histórico (coleção antiga)
         try {
             const db = await connectDB();
-            const collection = db.collection('tb_chat_historico');
-            await collection.insertOne({
-                data: new Date().toISOString().split('T')[0],
-                hora: new Date().toTimeString().split(' ')[0],
-                pergunta: message,
-                resposta: botResponse,
-                tipo: tipo,
-                timestamp: new Date()
-            });
+            if (db) {
+                const collection = db.collection('tb_chat_historico');
+                await collection.insertOne({
+                    data: new Date().toISOString().split('T')[0],
+                    hora: new Date().toTimeString().split(' ')[0],
+                    pergunta: message,
+                    resposta: botResponse,
+                    tipo: tipo,
+                    timestamp: new Date()
+                });
+            }
         } catch (error) {
             console.error('Erro ao salvar histórico do chat:', error);
             // Não interrompe o fluxo se falhar ao salvar o histórico
+        }
+
+        // Salvar sessão de chat usando Mongoose (nova funcionalidade)
+        try {
+            if (isMongoConnected) {
+                // Gerar um sessionId único
+                const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                
+                // Criar ou atualizar sessão de chat
+                const sessaoExistente = await SessaoChat.findOne({ 
+                    sessionId: sessionId 
+                });
+
+                if (sessaoExistente) {
+                    // Adicionar mensagens à sessão existente
+                    sessaoExistente.messages.push(
+                        { role: 'user', content: message, timestamp: new Date() },
+                        { role: 'assistant', content: botResponse, timestamp: new Date() }
+                    );
+                    await sessaoExistente.save();
+                } else {
+                    // Criar nova sessão
+                    const novaSessao = new SessaoChat({
+                        sessionId: sessionId,
+                        botId: 'Mari_Chatbot',
+                        startTime: new Date(),
+                        messages: [
+                            { role: 'user', content: message, timestamp: new Date() },
+                            { role: 'assistant', content: botResponse, timestamp: new Date() }
+                        ]
+                    });
+                    await novaSessao.save();
+                    console.log('Nova sessão de chat salva:', sessionId);
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao salvar sessão de chat:', error);
+            // Não interrompe o fluxo se falhar ao salvar a sessão
         }
 
         const response = {
@@ -460,7 +510,7 @@ app.post('/api/log-connection', async (req, res) => {
             col_data: dataFormatada,
             col_hora: horaFormatada,
             col_IP: ip || 'desconhecido',
-            col_nome_bot: nomeBot || 'desconhecido',
+            col_nome_bot: nomeBot || 'Mari_Chatbot',
             col_acao: acao || 'desconhecido'
         });
         try {
@@ -473,13 +523,13 @@ app.post('/api/log-connection', async (req, res) => {
         console.warn('Não foi possível conectar ao banco do professor.');
     }
 
-    // Validação para o banco principal
-    if (!ip || !acao || !nomeBot) {
+    // Validação para o banco principal - agora mais flexível
+    if (!ip || !acao) {
         return res.status(400).json({ 
-            error: "Dados de log incompletos (IP, ação e nome do bot são obrigatórios)." 
+            error: "Dados de log incompletos (IP e ação são obrigatórios)." 
         });
     } else {
-        console.log('Dados de log completos:', req.body);
+        console.log('Dados de log recebidos:', req.body);
     }
 
     try {
@@ -487,7 +537,7 @@ app.post('/api/log-connection', async (req, res) => {
             col_data: dataFormatada,
             col_hora: horaFormatada,
             col_IP: ip,
-            col_nome_bot: 'Mari_Chatbot',
+            col_nome_bot: nomeBot || 'Mari_Chatbot',
             col_acao: acao
         });
         await novoLog.save();
@@ -586,7 +636,7 @@ app.post('/api/chat/historico', async (req, res) => {
     }
 });
 
-// Endpoint para buscar histórico do chat
+// Endpoint para buscar histórico do chat (usando driver nativo)
 app.get('/api/chat/historico', async (req, res) => {
     try {
         const { data, tipo, limit = 50 } = req.query;
@@ -596,6 +646,13 @@ app.get('/api/chat/historico', async (req, res) => {
         if (tipo) query.tipo = tipo;
 
         const db = await connectDB();
+        if (!db) {
+            return res.status(503).json({ 
+                error: 'Servidor não conectado ao banco de dados',
+                message: 'Adicione seu IP à whitelist do MongoDB Atlas'
+            });
+        }
+        
         const collection = db.collection('tb_chat_historico');
         
         const historico = await collection
@@ -614,6 +671,104 @@ app.get('/api/chat/historico', async (req, res) => {
             error: 'Erro ao buscar histórico do chat',
             details: error.message 
         });
+    }
+});
+
+// Endpoint para buscar históricos de conversas (usando Mongoose)
+app.get('/api/chat/historicos', async (req, res) => {
+    try {
+        // Tentar conectar se não estiver conectado
+        if (!isMongoConnected) {
+            try {
+                await connectDB();
+            } catch (connectError) {
+                console.log('Tentativa de conexão falhou:', connectError.message);
+            }
+        }
+
+        if (!isMongoConnected) {
+            // Retornar dados de exemplo para demonstração
+            const dadosExemplo = [
+                {
+                    sessionId: 'session_681cfb8698a94b52e28487e1',
+                    botId: 'Mari_Chatbot',
+                    startTime: new Date(Date.now() - 3600000), // 1 hora atrás
+                    messages: [
+                        {
+                            role: 'user',
+                            content: 'quanto tempo durou a guerra dos 100 anos?',
+                            timestamp: new Date(Date.now() - 3600000)
+                        },
+                        {
+                            role: 'assistant',
+                            content: 'A Guerra dos Cem Anos durou aproximadamente 116 anos, de 1337 a 1453. Foi um conflito entre a Inglaterra e a França pela sucessão do trono francês. A guerra teve várias fases e períodos de paz, mas o conflito principal se estendeu por mais de um século.',
+                            timestamp: new Date(Date.now() - 3599000)
+                        }
+                    ]
+                },
+                {
+                    sessionId: 'session_681cfb8698a94b52e28487e2',
+                    botId: 'Mari_Chatbot',
+                    startTime: new Date(Date.now() - 7200000), // 2 horas atrás
+                    messages: [
+                        {
+                            role: 'user',
+                            content: 'fale sobre a revolução francesa',
+                            timestamp: new Date(Date.now() - 7200000)
+                        },
+                        {
+                            role: 'assistant',
+                            content: 'A Revolução Francesa (1789-1799) foi um período de intensa agitação social e política na França. Marcou o fim da monarquia absoluta e o início da era moderna. Principais eventos incluem a Queda da Bastilha, a Declaração dos Direitos do Homem e do Cidadão, e o período do Terror.',
+                            timestamp: new Date(Date.now() - 7199000)
+                        }
+                    ]
+                }
+            ];
+            
+            console.log(`[Servidor] Retornando ${dadosExemplo.length} históricos de exemplo (MongoDB não disponível)`);
+            return res.json(dadosExemplo);
+        }
+
+        // Busca todas as sessões, ordena pelas mais recentes, limita a 10
+        const historicos = await SessaoChat.find({})
+                                          .sort({ startTime: -1 }) // -1 para ordem decrescente (mais recentes primeiro)
+                                          .limit(10); // Limita a 10 resultados para não sobrecarregar
+        
+        console.log(`[Servidor] Buscados ${historicos.length} históricos de conversas`);
+        res.json(historicos);
+
+    } catch (error) {
+        console.error("[Servidor] Erro ao buscar históricos:", error);
+        res.status(500).json({ 
+            error: "Erro interno ao buscar históricos de chat.",
+            details: error.message 
+        });
+    }
+});
+
+// Endpoint para buscar detalhes de uma sessão específica
+app.get('/api/chat/historicos/:sessionId', async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        
+        if (!isMongoConnected) {
+            return res.status(503).json({ 
+                error: 'Servidor não conectado ao MongoDB',
+                message: 'Adicione seu IP à whitelist do MongoDB Atlas'
+            });
+        }
+
+        const sessao = await SessaoChat.findOne({ sessionId: sessionId });
+        
+        if (!sessao) {
+            return res.status(404).json({ error: "Sessão não encontrada." });
+        }
+
+        res.json(sessao);
+
+    } catch (error) {
+        console.error("[Servidor] Erro ao buscar sessão específica:", error);
+        res.status(500).json({ error: "Erro interno ao buscar sessão." });
     }
 });
 

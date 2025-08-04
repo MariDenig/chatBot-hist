@@ -120,45 +120,115 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error('Erro:', error);
     }
 
-    function updateHistoryModal() {
-        historyContent.innerHTML = '';
+    // Função para carregar histórico de sessões do MongoDB
+    async function carregarHistoricoSessoes() {
+        try {
+            const response = await fetch('/api/chat/historicos');
+            
+            if (!response.ok) {
+                if (response.status === 503) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Servidor não conectado ao MongoDB');
+                }
+                throw new Error(`Erro ${response.status}: ${response.statusText}`);
+            }
+            
+            const historicos = await response.json();
+            console.log('Históricos carregados:', historicos);
+            
+            const listaSessoes = document.getElementById('lista-sessoes');
+            listaSessoes.innerHTML = '';
+            
+            if (historicos.length === 0) {
+                listaSessoes.innerHTML = `
+                    <li class="sem-historico">
+                        <i class="fas fa-inbox"></i>
+                        <p>Nenhuma conversa salva ainda.</p>
+                    </li>
+                `;
+                return;
+            }
+            
+            historicos.forEach((sessao, index) => {
+                const li = document.createElement('li');
+                li.dataset.sessionId = sessao.sessionId;
+                
+                const dataFormatada = new Date(sessao.startTime).toLocaleString('pt-BR');
+                const numMensagens = sessao.messages ? sessao.messages.length : 0;
+                
+                li.innerHTML = `
+                    <div class="sessao-info">
+                        <span class="sessao-data">${dataFormatada}</span>
+                        <span class="sessao-bot">${sessao.botId || 'Chatbot'}</span>
+                    </div>
+                    <div class="sessao-mensagens">
+                        ${numMensagens} mensagem${numMensagens !== 1 ? 's' : ''}
+                    </div>
+                `;
+                
+                li.addEventListener('click', () => {
+                    // Remover classe ativa de todos os itens
+                    document.querySelectorAll('#lista-sessoes li').forEach(item => {
+                        item.classList.remove('sessao-ativa');
+                    });
+                    
+                    // Adicionar classe ativa ao item clicado
+                    li.classList.add('sessao-ativa');
+                    
+                    // Exibir conversa detalhada
+                    exibirConversaDetalhada(sessao);
+                });
+                
+                listaSessoes.appendChild(li);
+            });
+            
+        } catch (error) {
+            console.error('Erro ao carregar histórico:', error);
+            const listaSessoes = document.getElementById('lista-sessoes');
+            listaSessoes.innerHTML = `
+                <li class="sem-historico">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p>Erro ao carregar histórico: ${error.message}</p>
+                </li>
+            `;
+        }
+    }
+    
+    // Função para exibir conversa detalhada
+    function exibirConversaDetalhada(sessao) {
+        const conversaDetalhada = document.getElementById('visualizacao-conversa-detalhada');
         
-        if (conversationHistory.length === 0) {
-            const noHistory = document.createElement('div');
-            noHistory.className = 'no-history';
-            noHistory.textContent = 'Nenhuma conversa encontrada';
-            historyContent.appendChild(noHistory);
+        if (!sessao.messages || sessao.messages.length === 0) {
+            conversaDetalhada.innerHTML = `
+                <h3>Detalhes da Conversa</h3>
+                <div class="sem-historico">
+                    <i class="fas fa-comments"></i>
+                    <p>Nenhuma mensagem encontrada nesta sessão.</p>
+                </div>
+            `;
             return;
         }
         
-        conversationHistory.forEach((conversation, index) => {
-            const historyItem = document.createElement('div');
-            historyItem.className = 'history-item';
+        let html = '<h3>Detalhes da Conversa</h3>';
+        
+        sessao.messages.forEach(mensagem => {
+            const timestamp = new Date(mensagem.timestamp || Date.now()).toLocaleString('pt-BR');
+            const isUser = mensagem.role === 'user';
             
-            const timestamp = document.createElement('div');
-            timestamp.className = 'timestamp';
-            timestamp.textContent = new Date(conversation.timestamp).toLocaleString();
-            
-            const messages = document.createElement('div');
-            messages.className = 'messages';
-            
-            conversation.messages.forEach(msg => {
-                const messageDiv = document.createElement('div');
-                messageDiv.className = `message ${msg.isUser ? 'user-message' : 'bot-message'}`;
-                
-                if (msg.isUser) {
-                    messageDiv.textContent = msg.text;
-                } else {
-                    messageDiv.appendChild(formatMessage(msg.text));
-                }
-                
-                messages.appendChild(messageDiv);
-            });
-            
-            historyItem.appendChild(timestamp);
-            historyItem.appendChild(messages);
-            historyContent.appendChild(historyItem);
+            html += `
+                <div class="conversa-mensagem ${isUser ? 'usuario' : 'bot'}">
+                    <div class="timestamp">${timestamp}</div>
+                    <div class="content">${mensagem.content}</div>
+                </div>
+            `;
         });
+        
+        conversaDetalhada.innerHTML = html;
+    }
+    
+    // Função para atualizar o modal de histórico (compatibilidade)
+    function updateHistoryModal() {
+        carregarHistoricoSessoes();
     }
 
     // Funções para os botões de ação
@@ -320,12 +390,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(dataRanking)
             });
 
+            // Registrar log separadamente com os dados corretos
+            const ip = await getUserIP();
+            const logData = {
+                ip: ip,
+                acao: 'registro_ranking_bot',
+                nomeBot: 'Mari_Chatbot'
+            };
+            
             const responseLog = await fetch('/api/log-connection', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(dataRanking)
+                body: JSON.stringify(logData)
             });
 
 
