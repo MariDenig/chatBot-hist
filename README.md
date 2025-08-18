@@ -16,6 +16,13 @@ Este é um chatbot inteligente desenvolvido para responder perguntas sobre hist�
 - **Limitação**: Máximo de 10 resultados para performance
 
 ### ✅ Funcionalidades Anteriores
+### ✅ B3.P1.A3 - CRUD Completo com Título Inteligente (Novo)
+
+- **Endpoint DELETE `/api/chat/historicos/:id`**: Remove uma sessão por `_id`
+- **Endpoint POST `/api/chat/historicos/:id/gerar-titulo`**: Gera sugestão de título via Gemini
+- **Endpoint PUT `/api/chat/historicos/:id`**: Atualiza e salva o campo `titulo`
+- **Frontend**: Botões de ação “Gerar Título” e “Excluir” na lista de conversas, com confirmação e prompts
+
 
 - **Chat Inteligente**: Respostas baseadas em IA usando Google Gemini
 - **Verificação de Horário**: Função para obter hora atual
@@ -95,6 +102,9 @@ npm start
 - `POST /chat` - Envia mensagem para o chatbot
 - `GET /api/chat/historicos` - Lista todas as sessões de chat
 - `GET /api/chat/historicos/:sessionId` - Detalhes de uma sessão específica
+ - `DELETE /api/chat/historicos/:id` - Exclui uma sessão por `_id`
+ - `POST /api/chat/historicos/:id/gerar-titulo` - Sugere um título via IA
+ - `PUT /api/chat/historicos/:id` - Atualiza o `titulo` da sessão
 
 ### Logs e Monitoramento
 - `POST /api/log-connection` - Registra logs de acesso
@@ -161,6 +171,7 @@ Nenhuma conversa salva ainda
   botId: String,           // Nome do bot
   startTime: Date,         // Início da conversa
   endTime: Date,           // Fim da conversa (opcional)
+  titulo: String,          // Título curto da conversa (default: "Conversa Sem Título")
   messages: [              // Array de mensagens
     {
       role: String,        // 'user' ou 'assistant'
@@ -215,4 +226,4 @@ Este projeto foi desenvolvido como parte do curso de desenvolvimento web no IFPR
 
 ---
 
-**Status do Projeto**: ✅ Completo - B3.P1.A2 implementado com sucesso! 
+**Status do Projeto**: ✅ Completo - B3.P1.A2 implementado e B3.P1.A3 (CRUD com Título Inteligente) adicionado!

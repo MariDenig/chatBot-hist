@@ -5,6 +5,7 @@ const sessaoChatSchema = new mongoose.Schema({
     botId: { type: String, required: true },
     startTime: { type: Date, default: Date.now },
     endTime: { type: Date },
+    titulo: { type: String, default: 'Conversa Sem Título', trim: true },
     messages: [{
         role: { type: String, required: true }, // 'user' ou 'assistant'
         content: { type: String, required: true },

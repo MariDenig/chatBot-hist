@@ -219,10 +219,6 @@ body {
     padding: 15px 20px;
     border-radius: 20px;
     border: 1px solid var(--secondary-color);
-    position: absolute;
-    bottom: 20px;
-    left: 20px;
-    z-index: 1;
 }
 
 .typing-indicator span {

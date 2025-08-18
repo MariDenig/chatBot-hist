@@ -349,7 +349,7 @@ ${message}`;
 // Configuração do CORS
 app.use(cors({
     origin: ['https://chatbot-historia.onrender.com', 'http://localhost:3000'],
-    methods: ['GET', 'POST'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true
 }));
 
@@ -743,6 +743,141 @@ app.get('/api/chat/historicos', async (req, res) => {
             error: "Erro interno ao buscar históricos de chat.",
             details: error.message 
         });
+    }
+});
+
+// DELETE /api/chat/historicos/:id - excluir histórico de sessão por _id
+app.delete('/api/chat/historicos/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!isMongoConnected) {
+            return res.status(503).json({ 
+                error: 'Servidor não conectado ao MongoDB',
+                message: 'Adicione seu IP à whitelist do MongoDB Atlas'
+            });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ error: 'ID inválido.' });
+        }
+
+        const removida = await SessaoChat.findByIdAndDelete(id);
+        if (!removida) {
+            return res.status(404).json({ error: 'Histórico não encontrado.' });
+        }
+
+        return res.status(200).json({ message: 'Histórico excluído com sucesso.' });
+    } catch (error) {
+        console.error('[Servidor] Erro ao excluir histórico:', error);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ error: 'ID inválido.' });
+        }
+        return res.status(500).json({ error: 'Erro interno ao excluir histórico.' });
+    }
+});
+
+// POST /api/chat/historicos/:id/gerar-titulo - obter sugestão de título via Gemini
+app.post('/api/chat/historicos/:id/gerar-titulo', async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        if (!isMongoConnected) {
+            return res.status(503).json({ 
+                error: 'Servidor não conectado ao MongoDB',
+                message: 'Adicione seu IP à whitelist do MongoDB Atlas'
+            });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ error: 'ID inválido.' });
+        }
+
+        const sessao = await SessaoChat.findById(id);
+        if (!sessao) {
+            return res.status(404).json({ error: 'Histórico não encontrado.' });
+        }
+
+        const mensagens = Array.isArray(sessao.messages) ? sessao.messages : [];
+        const historicoFormatado = mensagens
+            .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
+            .join('\n');
+
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+        const prompt = [
+            'Considere a conversa abaixo e sugira um título curto, conciso e claro (máximo 5 palavras).',
+            'Responda com APENAS o título, sem aspas, sem ponto final.',
+            '',
+            'Conversa:',
+            historicoFormatado
+        ].join('\n');
+
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        let tituloSugerido = '';
+
+        if (typeof response.text === 'function') {
+            tituloSugerido = (response.text() || '').trim();
+        } else if (response.candidates && response.candidates[0]?.content?.parts?.[0]?.text) {
+            tituloSugerido = (response.candidates[0].content.parts[0].text || '').trim();
+        }
+
+        // Sanitização básica: remover aspas e limitar a 5 palavras
+        tituloSugerido = tituloSugerido.replace(/^"|"$/g, '').replace(/[\n\r]/g, ' ').trim();
+        const palavras = tituloSugerido.split(/\s+/).filter(Boolean);
+        if (palavras.length > 5) {
+            tituloSugerido = palavras.slice(0, 5).join(' ');
+        }
+
+        if (!tituloSugerido) {
+            tituloSugerido = 'Conversa Sem Título';
+        }
+
+        return res.status(200).json({ tituloSugerido });
+    } catch (error) {
+        console.error('[Servidor] Erro ao gerar título:', error);
+        return res.status(500).json({ error: 'Erro ao gerar título com a API Gemini.' });
+    }
+});
+
+// PUT /api/chat/historicos/:id - atualizar título
+app.put('/api/chat/historicos/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { titulo } = req.body || {};
+
+        if (!isMongoConnected) {
+            return res.status(503).json({ 
+                error: 'Servidor não conectado ao MongoDB',
+                message: 'Adicione seu IP à whitelist do MongoDB Atlas'
+            });
+        }
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ error: 'ID inválido.' });
+        }
+
+        if (!titulo || typeof titulo !== 'string' || !titulo.trim()) {
+            return res.status(400).json({ error: 'Título inválido.' });
+        }
+
+        const atualizado = await SessaoChat.findByIdAndUpdate(
+            id,
+            { $set: { titulo: titulo.trim() } },
+            { new: true }
+        );
+
+        if (!atualizado) {
+            return res.status(404).json({ error: 'Histórico não encontrado.' });
+        }
+
+        return res.status(200).json(atualizado);
+    } catch (error) {
+        console.error('[Servidor] Erro ao atualizar título:', error);
+        if (error.name === 'CastError') {
+            return res.status(400).json({ error: 'ID inválido.' });
+        }
+        return res.status(500).json({ error: 'Erro interno ao atualizar título.' });
     }
 });
 

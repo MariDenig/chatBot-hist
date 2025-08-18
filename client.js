@@ -78,6 +78,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         chatMessages.appendChild(messageDiv);
+        // Garantir que o indicador de digitação fique sempre no final, se estiver visível
+        if (typingIndicator && typingIndicator.style.display !== 'none') {
+            chatMessages.appendChild(typingIndicator);
+        }
         scrollToBottom();
     }
 
@@ -87,6 +91,8 @@ document.addEventListener('DOMContentLoaded', () => {
             sendButton.disabled = true;
             sendButton.textContent = 'Enviando...';
             typingIndicator.style.display = 'block';
+            // Reposicionar o indicador no final sempre que começar o carregamento
+            chatMessages.appendChild(typingIndicator);
             scrollToBottom();
         } else {
             sendButton.disabled = false;
@@ -123,7 +129,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Função para carregar histórico de sessões do MongoDB
     async function carregarHistoricoSessoes() {
         try {
-            const response = await fetch('/api/chat/historicos');
+            const response = await fetch('https://chatbot-historia.onrender.com/api/chat/historicos');
             
             if (!response.ok) {
                 if (response.status === 503) {
@@ -149,14 +155,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
             
-            historicos.forEach((sessao, index) => {
+            historicos.forEach((sessao) => {
                 const li = document.createElement('li');
                 li.dataset.sessionId = sessao.sessionId;
-                
+                li.dataset.id = sessao._id;
+
                 const dataFormatada = new Date(sessao.startTime).toLocaleString('pt-BR');
                 const numMensagens = sessao.messages ? sessao.messages.length : 0;
-                
+                const tituloSessao = (sessao.titulo && String(sessao.titulo).trim()) ? sessao.titulo.trim() : 'Conversa Sem Título';
+
                 li.innerHTML = `
+                    <div class="sessao-topo">
+                        <span class="sessao-titulo">${tituloSessao}</span>
+                        <div class="sessao-acoes">
+                            <button class="gerar-titulo-btn" title="Gerar Título">✨</button>
+                            <button class="excluir-btn" title="Excluir">🗑️</button>
+                        </div>
+                    </div>
                     <div class="sessao-info">
                         <span class="sessao-data">${dataFormatada}</span>
                         <span class="sessao-bot">${sessao.botId || 'Chatbot'}</span>
@@ -165,20 +180,34 @@ document.addEventListener('DOMContentLoaded', () => {
                         ${numMensagens} mensagem${numMensagens !== 1 ? 's' : ''}
                     </div>
                 `;
-                
+
                 li.addEventListener('click', () => {
                     // Remover classe ativa de todos os itens
                     document.querySelectorAll('#lista-sessoes li').forEach(item => {
                         item.classList.remove('sessao-ativa');
                     });
-                    
+
                     // Adicionar classe ativa ao item clicado
                     li.classList.add('sessao-ativa');
-                    
+
                     // Exibir conversa detalhada
                     exibirConversaDetalhada(sessao);
                 });
-                
+
+                // Ações dos botões
+                const btnExcluir = li.querySelector('.excluir-btn');
+                const btnGerar = li.querySelector('.gerar-titulo-btn');
+
+                btnExcluir.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    excluirSessao(sessao._id, li);
+                });
+
+                btnGerar.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    await obterESalvarTitulo(sessao._id, li, btnGerar);
+                });
+
                 listaSessoes.appendChild(li);
             });
             
@@ -231,6 +260,107 @@ document.addEventListener('DOMContentLoaded', () => {
         carregarHistoricoSessoes();
     }
 
+    // Excluir sessão
+    async function excluirSessao(sessionMongoId, elementoLi) {
+        try {
+            const confirmado = confirm('Tem certeza que deseja excluir esta conversa? Esta ação não pode ser desfeita.');
+            if (!confirmado) return;
+
+            const response = await fetch(`https://chatbot-historia.onrender.com/api/chat/historicos/${sessionMongoId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                let mensagem = 'Falha ao excluir o histórico.';
+                try {
+                    const erro = await response.json();
+                    mensagem = erro.error || mensagem;
+                } catch {}
+                alert(mensagem);
+                return;
+            }
+
+            // Remover da UI
+            elementoLi.remove();
+            const conversaDetalhada = document.getElementById('visualizacao-conversa-detalhada');
+            if (conversaDetalhada && !document.querySelector('#lista-sessoes li.sessao-ativa')) {
+                conversaDetalhada.innerHTML = '';
+            }
+        } catch (error) {
+            console.error('Erro ao excluir sessão:', error);
+            alert('Erro ao excluir a sessão. Tente novamente.');
+        }
+    }
+
+    // Gerar e salvar título da sessão
+    async function obterESalvarTitulo(sessionMongoId, elementoLi, botaoAcionador) {
+        let textoOriginalBotao;
+        try {
+            if (botaoAcionador) {
+                textoOriginalBotao = botaoAcionador.textContent;
+                botaoAcionador.disabled = true;
+                botaoAcionador.textContent = 'Gerando...';
+            }
+
+            // Solicitar sugestão ao backend
+            const respSugestao = await fetch(`https://chatbot-historia.onrender.com/api/chat/historicos/${sessionMongoId}/gerar-titulo`, {
+                method: 'POST'
+            });
+            if (!respSugestao.ok) {
+                let mensagem = 'Falha ao gerar título.';
+                try {
+                    const erro = await respSugestao.json();
+                    mensagem = erro.error || mensagem;
+                } catch {}
+                alert(mensagem);
+                return;
+            }
+            const { tituloSugerido } = await respSugestao.json();
+
+            // Permitir edição/confirmação
+            const tituloFinal = prompt('Sugerimos este título para a conversa. Você pode editar antes de salvar:', tituloSugerido || 'Conversa Sem Título');
+            if (tituloFinal === null) {
+                return; // cancelado pelo usuário
+            }
+            const tituloAjustado = String(tituloFinal).trim();
+            if (!tituloAjustado) {
+                alert('Título inválido. Operação cancelada.');
+                return;
+            }
+
+            // Salvar título
+            const respSalvar = await fetch(`https://chatbot-historia.onrender.com/api/chat/historicos/${sessionMongoId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ titulo: tituloAjustado })
+            });
+
+            if (!respSalvar.ok) {
+                let mensagem = 'Falha ao salvar título.';
+                try {
+                    const erro = await respSalvar.json();
+                    mensagem = erro.error || mensagem;
+                } catch {}
+                alert(mensagem);
+                return;
+            }
+
+            const atualizado = await respSalvar.json();
+            const spanTitulo = elementoLi.querySelector('.sessao-titulo');
+            if (spanTitulo) {
+                spanTitulo.textContent = (atualizado && atualizado.titulo) ? atualizado.titulo : tituloAjustado;
+            }
+        } catch (error) {
+            console.error('Erro ao gerar/salvar título:', error);
+            alert('Erro ao gerar ou salvar o título. Tente novamente.');
+        } finally {
+            if (botaoAcionador) {
+                botaoAcionador.disabled = false;
+                botaoAcionador.textContent = textoOriginalBotao || 'Gerar Título';
+            }
+        }
+    }
+
     // Funções para os botões de ação
     function checkCurrentTime() {
         if (isProcessing) return;
@@ -269,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('Enviando mensagem para o servidor:', message);
             console.log('Histórico atual:', chatHistory);
             
-            const response = await fetch('/chat', {
+            const response = await fetch('https://chatbot-historia.onrender.com/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -355,7 +485,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 acao: acao
             };
 
-            const response = await fetch('/api/log-connection', {
+            const response = await fetch('https://chatbot-historia.onrender.com/api/log-connection', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -382,7 +512,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 timestampAcesso: new Date().toISOString()
             };
 
-            const response = await fetch('/api/ranking/registrar-acesso-bot', {
+            const response = await fetch('https://chatbot-historia.onrender.com/api/ranking/registrar-acesso-bot', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -398,7 +528,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nomeBot: 'Mari_Chatbot'
             };
             
-            const responseLog = await fetch('/api/log-connection', {
+            const responseLog = await fetch('https://chatbot-historia.onrender.com/api/log-connection', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

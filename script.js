@@ -1,7 +1,7 @@
 // Função para testar o registro de log
 async function testarRegistroLog() {
     try {
-        const response = await fetch('/api/log-connection', {
+        const response = await fetch('https://chatbot-historia.onrender.com/api/log-connection', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
