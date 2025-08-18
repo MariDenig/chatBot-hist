@@ -348,7 +348,7 @@ ${message}`;
 
 // Configuração do CORS
 app.use(cors({
-    origin: ['https://chatbot-historia.onrender.com', 'http://localhost:3000'],
+    origin: ['https://chat-bot-hist.vercel.app/','https://chatbot-historia.onrender.com', 'http://localhost:3000'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true
 }));
