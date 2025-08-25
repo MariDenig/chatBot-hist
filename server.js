@@ -16,6 +16,10 @@ console.log('Arquivo .env existe?', fs.existsSync(envPath));
 
 require('dotenv').config();
 
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+
 // Configuração do CORS
 app.use(cors({
     origin: ['https://chat-bot-hist.vercel.app','https://chatbot-historia.onrender.com', 'http://localhost:3000'],
@@ -104,15 +108,6 @@ async function connectDB() {
     }
 }
 
-const app = express();
-const PORT = process.env.PORT || 3001;
-
-// Configuração do CORS (deve vir após criar o app)
-app.use(cors({
-    origin: ['https://chat-bot-hist.vercel.app', 'https://chatbot-historia.onrender.com', 'http://localhost:3000'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    credentials: true
-}));
 
 // Verificar se a chave API está configurada
 if (!process.env.GOOGLE_API_KEY) {
