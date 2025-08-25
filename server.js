@@ -16,6 +16,12 @@ console.log('Arquivo .env existe?', fs.existsSync(envPath));
 
 require('dotenv').config();
 
+// Configuração do CORS
+app.use(cors({
+    origin: ['https://chat-bot-hist.vercel.app','https://chatbot-historia.onrender.com', 'http://localhost:3000'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    credentials: true
+}));
 // Log de todas as variáveis de ambiente
 console.log('Variáveis de ambiente carregadas:', {
     GOOGLE_API_KEY: process.env.GOOGLE_API_KEY ? 'Definida' : 'Não definida',
@@ -101,6 +107,13 @@ async function connectDB() {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Configuração do CORS (deve vir após criar o app)
+app.use(cors({
+    origin: ['https://chat-bot-hist.vercel.app', 'https://chatbot-historia.onrender.com', 'http://localhost:3000'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    credentials: true
+}));
+
 // Verificar se a chave API está configurada
 if (!process.env.GOOGLE_API_KEY) {
     console.error('ERRO: GOOGLE_API_KEY não está definida no arquivo .env');
@@ -113,6 +126,58 @@ if (!process.env.GOOGLE_API_KEY) {
 
 // Configurar Gemini
 const genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY);
+
+// Utilitários de formatação para evitar dependência do locale do sistema
+function formatDateTimeInTimeZone(date, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    }).formatToParts(date);
+
+    const get = (type) => parts.find(p => p.type === type)?.value || '';
+    let hour = parseInt(get('hour') || '0', 10);
+    const minute = get('minute');
+    const second = get('second');
+    const day = get('day');
+    const month = get('month');
+    const year = get('year');
+    const dayPeriod = (get('dayPeriod') || '').toUpperCase();
+
+    // Converter para 24h
+    if (dayPeriod === 'PM' && hour < 12) hour += 12;
+    if (dayPeriod === 'AM' && hour === 12) hour = 0;
+
+    const hh = String(hour).padStart(2, '0');
+    return `${day}/${month}/${year} ${hh}:${minute}:${second}`;
+}
+
+function formatTimeInTimeZone(date, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+    }).formatToParts(date);
+
+    const get = (type) => parts.find(p => p.type === type)?.value || '';
+    let hour = parseInt(get('hour') || '0', 10);
+    const minute = get('minute');
+    const second = get('second');
+    const dayPeriod = (get('dayPeriod') || '').toUpperCase();
+
+    if (dayPeriod === 'PM' && hour < 12) hour += 12;
+    if (dayPeriod === 'AM' && hour === 12) hour = 0;
+
+    const hh = String(hour).padStart(2, '0');
+    return `${hh}:${minute}:${second}`;
+}
 
 // Definir as ferramentas disponíveis
 const tools = [    {
@@ -164,10 +229,24 @@ const tools = [    {
 ];
 
 // Funções disponíveis
+// Armazenamento em memória para fallback quando Mongo não está disponível
+const inMemorySessions = new Map();
+
 const availableFunctions = {
-    getCurrentTime: () => {
+    getCurrentTime: async () => {
         console.log("Executando getCurrentTime");
-        return { currentTime: new Date().toLocaleString() };
+        // Tentar WorldTimeAPI para garantir fuso e data corretos
+        try {
+            const { data } = await axios.get('https://worldtimeapi.org/api/timezone/America/Sao_Paulo', { timeout: 8000 });
+            // data.datetime é ISO, ex: 2025-08-25T14:06:38.123456-03:00
+            const iso = data.datetime;
+            const dt = new Date(iso);
+            return { currentTime: formatDateTimeInTimeZone(dt, 'America/Sao_Paulo') };
+        } catch (e) {
+            console.warn('WorldTimeAPI falhou, usando Intl local:', e.message);
+            const now = new Date();
+            return { currentTime: formatDateTimeInTimeZone(now, 'America/Sao_Paulo') };
+        }
     },
     searchHistory: (args) => {
         console.log("Executando searchHistory com args:", args);
@@ -190,13 +269,27 @@ const availableFunctions = {
             };
         }
 
-        // Função auxiliar para fazer a requisição
+        // Função auxiliar para fazer a requisição com timeout
         const makeWeatherRequest = async (searchLocation) => {
             const url = `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(searchLocation)}&appid=${apiKey}&units=metric&lang=pt_br`;
             console.log('Fazendo requisição para:', url);
-            const response = await axios.get(url);
-            console.log('Resposta da API:', response.data);
-            return response;
+            
+            // Adicionar timeout de 10 segundos
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+            
+            try {
+                const response = await axios.get(url, { 
+                    signal: controller.signal,
+                    timeout: 10000 
+                });
+                clearTimeout(timeoutId);
+                console.log('Resposta da API:', response.data);
+                return response;
+            } catch (error) {
+                clearTimeout(timeoutId);
+                throw error;
+            }
         };
         
         try {
@@ -210,13 +303,19 @@ const availableFunctions = {
                     throw new Error('Dados do clima não disponíveis');
                 }
 
+                // Converter timestamp para hora local brasileira (sem ajuste manual)
+                const timestamp = response.data.dt;
+                const date = new Date(timestamp * 1000);
+                const horaAtualizacao = formatTimeInTimeZone(date, 'America/Sao_Paulo');
+
                 return {
                     location: response.data.name,
                     temperature: `${Math.round(response.data.main.temp)}°C`,
                     description: response.data.weather[0].description,
                     feels_like: `${Math.round(response.data.main.feels_like)}°C`,
                     humidity: `${response.data.main.humidity}%`,
-                    wind_speed: `${response.data.wind.speed} m/s`
+                    wind_speed: `${response.data.wind.speed} m/s`,
+                    updated_at: horaAtualizacao
                 };
             } catch (firstError) {
                 console.log('Primeira tentativa falhou:', firstError.message);
@@ -229,18 +328,30 @@ const availableFunctions = {
                     throw new Error('Dados do clima não disponíveis');
                 }
 
+                // Converter timestamp para hora local brasileira (sem ajuste manual)
+                const timestamp = retryResponse.data.dt;
+                const date = new Date(timestamp * 1000);
+                const horaAtualizacao = formatTimeInTimeZone(date, 'America/Sao_Paulo');
+
                 return {
                     location: retryResponse.data.name,
                     temperature: `${Math.round(retryResponse.data.main.temp)}°C`,
                     description: retryResponse.data.weather[0].description,
                     feels_like: `${Math.round(retryResponse.data.main.feels_like)}°C`,
                     humidity: `${retryResponse.data.main.humidity}%`,
-                    wind_speed: `${retryResponse.data.wind.speed} m/s`
+                    wind_speed: `${retryResponse.data.wind.speed} m/s`,
+                    updated_at: horaAtualizacao
                 };
             }
         } catch (error) {
             console.error("Erro detalhado ao chamar OpenWeatherMap:", error);
             console.error("Resposta de erro:", error.response?.data);
+            
+            if (error.code === 'ECONNABORTED' || error.name === 'AbortError') {
+                return { 
+                    error: `Timeout ao buscar informações do clima para "${location}". A requisição demorou muito para responder. Tente novamente.` 
+                };
+            }
             
             if (error.response?.status === 404) {
                 return { 
@@ -275,7 +386,7 @@ async function generateResponse(message, history) {
 
         // Verificar se é uma solicitação de tempo
         if (message.toLowerCase().includes('horas') || message.toLowerCase().includes('hora atual')) {
-            const timeResult = availableFunctions.getCurrentTime();
+            const timeResult = await availableFunctions.getCurrentTime();
             return `A hora atual é: ${timeResult.currentTime}`;
         }
 
@@ -300,7 +411,7 @@ async function generateResponse(message, history) {
             if (weatherResult.error) {
                 return weatherResult.error;
             }
-            return `Clima em ${weatherResult.location}:\nTemperatura: ${weatherResult.temperature}\nSensação térmica: ${weatherResult.feels_like}\nCondição: ${weatherResult.description}\nUmidade: ${weatherResult.humidity}\nVelocidade do vento: ${weatherResult.wind_speed}`;
+            return `Clima em ${weatherResult.location}:\nTemperatura: ${weatherResult.temperature}\nSensação térmica: ${weatherResult.feels_like}\nCondição: ${weatherResult.description}\nUmidade: ${weatherResult.humidity}\nVelocidade do vento: ${weatherResult.wind_speed}\nAtualizado às: ${weatherResult.updated_at}`;
         }
 
         // Se não for uma função especial, usar o Gemini
@@ -309,30 +420,42 @@ async function generateResponse(message, history) {
             model: "gemini-2.0-flash"
         });
 
-        // Preparar o prompt
+        // Preparar o prompt com timeout
         const prompt = `Você é um historiador especializado. Responda à seguinte pergunta de forma detalhada e precisa:
 ${message}`;
 
-        // Gerar resposta
-        const result = await model.generateContent(prompt);
-        const response = await result.response;
+        // Gerar resposta com timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 segundos timeout
         
-        console.log('Resposta do Gemini:', response);
+        try {
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            
+            clearTimeout(timeoutId);
+            console.log('Resposta do Gemini:', response);
 
-        // Extrair o texto da resposta
-        if (response.text) {
-            return response.text();
-        }
-
-        // Se não encontrar o texto diretamente, tentar outras estruturas
-        if (response.candidates && response.candidates[0]) {
-            const candidate = response.candidates[0];
-            if (candidate.content && candidate.content.parts && candidate.content.parts[0]) {
-                return candidate.content.parts[0].text;
+            // Extrair o texto da resposta
+            if (response.text) {
+                return response.text();
             }
-        }
 
-        throw new Error('Não foi possível extrair a resposta do Gemini');
+            // Se não encontrar o texto diretamente, tentar outras estruturas
+            if (response.candidates && response.candidates[0]) {
+                const candidate = response.candidates[0];
+                if (candidate.content && candidate.content.parts && candidate.content.parts[0]) {
+                    return candidate.content.parts[0].text;
+                }
+            }
+
+            throw new Error('Não foi possível extrair a resposta do Gemini');
+        } catch (timeoutError) {
+            clearTimeout(timeoutId);
+            if (timeoutError.name === 'AbortError') {
+                throw new Error('Timeout: A resposta demorou muito para ser gerada. Tente novamente.');
+            }
+            throw timeoutError;
+        }
 
     } catch (error) {
         console.error('Erro detalhado ao gerar resposta:', error);
@@ -342,16 +465,15 @@ ${message}`;
             throw new Error('Erro de autenticação com a API do Google. Verifique sua chave API.');
         }
         
+        if (error.message.includes('Timeout')) {
+            throw new Error('A resposta demorou muito para ser gerada. Tente novamente.');
+        }
+        
         throw new Error(`Erro ao gerar resposta: ${error.message}`);
     }
 }
 
-// Configuração do CORS
-app.use(cors({
-    origin: ['https://chat-bot-hist.vercel.app/','https://chatbot-historia.onrender.com', 'http://localhost:3000'],
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    credentials: true
-}));
+
 
 // Middleware para log de requisições
 app.use((req, res, next) => {
@@ -362,6 +484,9 @@ app.use((req, res, next) => {
 // Middleware
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '')));
+
+// Evitar 404 de favicon
+app.get('/favicon.ico', (req, res) => res.status(204).end());
 
 // Rota principal
 app.get('/', (req, res) => {
@@ -388,7 +513,7 @@ app.get('/status', (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         console.log('Recebida requisição POST em /chat');
-        const { message, history } = req.body;
+        const { message, history, sessionId: clientSessionId } = req.body;
         
         if (!message) {
             return res.status(400).json({ 
@@ -431,13 +556,13 @@ app.post('/chat', async (req, res) => {
         // Salvar sessão de chat usando Mongoose (nova funcionalidade)
         try {
             if (isMongoConnected) {
-                // Gerar um sessionId único
-                const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                
-                // Criar ou atualizar sessão de chat
-                const sessaoExistente = await SessaoChat.findOne({ 
-                    sessionId: sessionId 
-                });
+                // Usar sessionId do cliente quando fornecido, senão gerar um
+                const sessionId = clientSessionId && String(clientSessionId).trim()
+                    ? String(clientSessionId).trim()
+                    : `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+                // Criar ou atualizar sessão de chat com base no sessionId
+                const sessaoExistente = await SessaoChat.findOne({ sessionId });
 
                 if (sessaoExistente) {
                     // Adicionar mensagens à sessão existente
@@ -460,6 +585,24 @@ app.post('/chat', async (req, res) => {
                     await novaSessao.save();
                     console.log('Nova sessão de chat salva:', sessionId);
                 }
+
+                // Incluir sessionId no response para o cliente persistir
+                res.locals.sessionId = sessionId;
+            }
+            // Fallback memória: se Mongo indisponível, salvar/append na memória
+            if (!isMongoConnected) {
+                const mem = inMemorySessions.get(clientSessionId) || {
+                    sessionId: clientSessionId || `session_${Date.now()}`,
+                    botId: 'Mari_Chatbot',
+                    startTime: new Date(),
+                    messages: []
+                };
+                mem.messages.push(
+                    { role: 'user', content: message, timestamp: new Date() },
+                    { role: 'assistant', content: botResponse, timestamp: new Date() }
+                );
+                inMemorySessions.set(mem.sessionId, mem);
+                res.locals.sessionId = mem.sessionId;
             }
         } catch (error) {
             console.error('Erro ao salvar sessão de chat:', error);
@@ -471,7 +614,8 @@ app.post('/chat', async (req, res) => {
             history: [...(history || []), 
                 { role: 'user', content: message }, 
                 { role: 'assistant', content: botResponse }
-            ]
+            ],
+            sessionId: res.locals.sessionId || clientSessionId || null
         };
 
         res.json(response);
@@ -687,46 +831,12 @@ app.get('/api/chat/historicos', async (req, res) => {
         }
 
         if (!isMongoConnected) {
-            // Retornar dados de exemplo para demonstração
-            const dadosExemplo = [
-                {
-                    sessionId: 'session_681cfb8698a94b52e28487e1',
-                    botId: 'Mari_Chatbot',
-                    startTime: new Date(Date.now() - 3600000), // 1 hora atrás
-                    messages: [
-                        {
-                            role: 'user',
-                            content: 'quanto tempo durou a guerra dos 100 anos?',
-                            timestamp: new Date(Date.now() - 3600000)
-                        },
-                        {
-                            role: 'assistant',
-                            content: 'A Guerra dos Cem Anos durou aproximadamente 116 anos, de 1337 a 1453. Foi um conflito entre a Inglaterra e a França pela sucessão do trono francês. A guerra teve várias fases e períodos de paz, mas o conflito principal se estendeu por mais de um século.',
-                            timestamp: new Date(Date.now() - 3599000)
-                        }
-                    ]
-                },
-                {
-                    sessionId: 'session_681cfb8698a94b52e28487e2',
-                    botId: 'Mari_Chatbot',
-                    startTime: new Date(Date.now() - 7200000), // 2 horas atrás
-                    messages: [
-                        {
-                            role: 'user',
-                            content: 'fale sobre a revolução francesa',
-                            timestamp: new Date(Date.now() - 7200000)
-                        },
-                        {
-                            role: 'assistant',
-                            content: 'A Revolução Francesa (1789-1799) foi um período de intensa agitação social e política na França. Marcou o fim da monarquia absoluta e o início da era moderna. Principais eventos incluem a Queda da Bastilha, a Declaração dos Direitos do Homem e do Cidadão, e o período do Terror.',
-                            timestamp: new Date(Date.now() - 7199000)
-                        }
-                    ]
-                }
-            ];
-            
-            console.log(`[Servidor] Retornando ${dadosExemplo.length} históricos de exemplo (MongoDB não disponível)`);
-            return res.json(dadosExemplo);
+            // Fallback: retornar sessões em memória
+            const memoria = Array.from(inMemorySessions.values())
+                .sort((a, b) => (b.startTime || 0) - (a.startTime || 0))
+                .slice(0, 10);
+            console.log(`[Servidor] Retornando ${memoria.length} históricos em memória (MongoDB não disponível)`);
+            return res.json(memoria);
         }
 
         // Busca todas as sessões, ordena pelas mais recentes, limita a 10
@@ -877,6 +987,37 @@ app.put('/api/chat/historicos/:id', async (req, res) => {
         if (error.name === 'CastError') {
             return res.status(400).json({ error: 'ID inválido.' });
         }
+        return res.status(500).json({ error: 'Erro interno ao atualizar título.' });
+    }
+});
+// PUT /api/chat/historicos/session/:sessionId - atualizar título por sessionId (útil para fallback/memória)
+app.put('/api/chat/historicos/session/:sessionId', async (req, res) => {
+    try {
+        const { sessionId } = req.params;
+        const { titulo } = req.body || {};
+
+        if (!titulo || typeof titulo !== 'string' || !titulo.trim()) {
+            return res.status(400).json({ error: 'Título inválido.' });
+        }
+
+        if (isMongoConnected) {
+            const atualizado = await SessaoChat.findOneAndUpdate(
+                { sessionId },
+                { $set: { titulo: titulo.trim() } },
+                { new: true }
+            );
+            if (!atualizado) return res.status(404).json({ error: 'Histórico não encontrado.' });
+            return res.status(200).json(atualizado);
+        }
+
+        // Fallback memória
+        const mem = inMemorySessions.get(sessionId);
+        if (!mem) return res.status(404).json({ error: 'Histórico não encontrado.' });
+        mem.titulo = titulo.trim();
+        inMemorySessions.set(sessionId, mem);
+        return res.status(200).json(mem);
+    } catch (error) {
+        console.error('[Servidor] Erro ao atualizar título por sessionId:', error);
         return res.status(500).json({ error: 'Erro interno ao atualizar título.' });
     }
 });

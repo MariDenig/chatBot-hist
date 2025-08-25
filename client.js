@@ -16,12 +16,19 @@ document.addEventListener('DOMContentLoaded', () => {
     let chatHistory = []; // Armazenar o histórico da conversa
     let conversationHistory = []; // Armazenar conversas completas
     let isProcessing = false; // Controlar estado de processamento
+    let sessionId = localStorage.getItem('chat_session_id') || null;
 
     // Criar indicador de digitação
     const typingIndicator = document.createElement('div');
     typingIndicator.className = 'typing-indicator';
     typingIndicator.innerHTML = '<span></span><span></span><span></span>';
     chatMessages.appendChild(typingIndicator);
+
+    // Adicionar indicador de tempo de resposta
+    const responseTimeIndicator = document.createElement('div');
+    responseTimeIndicator.className = 'response-time-indicator';
+    responseTimeIndicator.style.display = 'none';
+    chatMessages.appendChild(responseTimeIndicator);
 
     // Adicionar mensagem de boas-vindas
     addMessage('Olá! Eu sou o Chatbot Historiador. Estou aqui para responder suas perguntas sobre história. Como posso ajudar você hoje?');
@@ -91,13 +98,17 @@ document.addEventListener('DOMContentLoaded', () => {
             sendButton.disabled = true;
             sendButton.textContent = 'Enviando...';
             typingIndicator.style.display = 'block';
+            responseTimeIndicator.style.display = 'block';
+            responseTimeIndicator.textContent = 'Processando...';
             // Reposicionar o indicador no final sempre que começar o carregamento
             chatMessages.appendChild(typingIndicator);
+            chatMessages.appendChild(responseTimeIndicator);
             scrollToBottom();
         } else {
             sendButton.disabled = false;
             sendButton.textContent = 'Enviar';
             typingIndicator.style.display = 'none';
+            responseTimeIndicator.style.display = 'none';
         }
     }
 
@@ -169,6 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="sessao-titulo">${tituloSessao}</span>
                         <div class="sessao-acoes">
                             <button class="gerar-titulo-btn" title="Gerar Título">✨</button>
+                            <button class="editar-titulo-btn" title="Editar Título">✏️</button>
                             <button class="excluir-btn" title="Excluir">🗑️</button>
                         </div>
                     </div>
@@ -197,15 +209,66 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Ações dos botões
                 const btnExcluir = li.querySelector('.excluir-btn');
                 const btnGerar = li.querySelector('.gerar-titulo-btn');
+                const btnEditar = li.querySelector('.editar-titulo-btn');
+
+                // Desabilitar ações quando não houver _id (dados de exemplo/sem Mongo)
+                if (!sessao._id) {
+                    btnExcluir.disabled = true;
+                    btnGerar.disabled = true;
+                    btnEditar.disabled = false; // permitir editar via sessionId no fallback
+                    btnExcluir.title = 'Indisponível sem conexão ao banco';
+                    btnGerar.title = 'Indisponível sem conexão ao banco';
+                }
 
                 btnExcluir.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    excluirSessao(sessao._id, li);
+                    if (sessao._id) excluirSessao(sessao._id, li);
                 });
 
                 btnGerar.addEventListener('click', async (e) => {
                     e.stopPropagation();
-                    await obterESalvarTitulo(sessao._id, li, btnGerar);
+                    if (sessao._id) await obterESalvarTitulo(sessao._id, li, btnGerar);
+                });
+
+                btnEditar.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const atual = (sessao.titulo && String(sessao.titulo).trim()) ? sessao.titulo.trim() : 'Conversa Sem Título';
+                    const novo = prompt('Editar título da conversa:', atual);
+                    if (novo === null) return;
+                    const tituloAjustado = String(novo).trim();
+                    if (!tituloAjustado) { alert('Título inválido.'); return; }
+
+                    try {
+                        let resp;
+                        if (sessao._id) {
+                            resp = await fetch(`https://chatbot-historia.onrender.com/api/chat/historicos/${sessao._id}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ titulo: tituloAjustado })
+                            });
+                        } else if (sessao.sessionId) {
+                            resp = await fetch(`https://chatbot-historia.onrender.com/api/chat/historicos/session/${sessao.sessionId}`, {
+                                method: 'PUT',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ titulo: tituloAjustado })
+                            });
+                        } else {
+                            alert('Não foi possível identificar a sessão.');
+                            return;
+                        }
+
+                        if (!resp.ok) {
+                            const err = await resp.json().catch(() => ({}));
+                            throw new Error(err.error || 'Falha ao salvar título');
+                        }
+
+                        const atualizado = await resp.json();
+                        const spanTitulo = li.querySelector('.sessao-titulo');
+                        if (spanTitulo) spanTitulo.textContent = (atualizado && atualizado.titulo) ? atualizado.titulo : tituloAjustado;
+                    } catch (err) {
+                        console.error('Erro ao editar título:', err);
+                        alert('Erro ao editar o título.');
+                    }
                 });
 
                 listaSessoes.appendChild(li);
@@ -395,9 +458,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function processBotRequest(message) {
+        const startTime = Date.now();
         try {
             console.log('Enviando mensagem para o servidor:', message);
             console.log('Histórico atual:', chatHistory);
+            
+            // Atualizar indicador de tempo
+            if (responseTimeIndicator.style.display !== 'none') {
+                responseTimeIndicator.textContent = 'Conectando ao servidor...';
+            }
             
             const response = await fetch('https://chatbot-historia.onrender.com/chat', {
                 method: 'POST',
@@ -406,7 +475,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 },
                 body: JSON.stringify({ 
                     message,
-                    history: chatHistory
+                    history: chatHistory,
+                    sessionId: sessionId
                 }),
             });
 
@@ -419,9 +489,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(data.details || data.error || 'Erro desconhecido');
             }
 
+            // Calcular tempo de resposta
+            const responseTime = Date.now() - startTime;
+            console.log(`Tempo de resposta: ${responseTime}ms`);
+
             // Atualizar histórico
             chatHistory = data.history;
             console.log('Histórico atualizado:', chatHistory);
+
+            // Persistir sessionId retornado pelo servidor
+            if (data.sessionId && data.sessionId !== sessionId) {
+                sessionId = data.sessionId;
+                localStorage.setItem('chat_session_id', sessionId);
+            }
             
             // Mostrar resposta do bot
             if (data.response) {

@@ -1,73 +1,39 @@
-# Chatbot Historiador - B3.P1.A2
+# Chatbot Historiador - Mari
 
-## 📋 Descrição do Projeto
+Um chatbot inteligente especializado em história, desenvolvido com Node.js, Express e Google Gemini AI.
 
-Este é um chatbot inteligente desenvolvido para responder perguntas sobre história, utilizando a API Gemini da Google. O projeto implementa funcionalidades avançadas de persistência de dados e histórico de conversas.
-
-## 🚀 Funcionalidades Implementadas
-
-### ✅ B3.P1.A2 - Memórias de um Chatbot: Lendo e Exibindo Históricos de Conversa
-
-- **Endpoint GET `/api/chat/historicos`**: Busca todas as sessões de chat salvas no MongoDB
-- **Endpoint GET `/api/chat/historicos/:sessionId`**: Busca detalhes de uma sessão específica
-- **Interface de Histórico**: Modal com lista de conversas e visualização detalhada
-- **Persistência de Dados**: Salva automaticamente cada conversa no MongoDB Atlas
-- **Ordenação**: Históricos ordenados por data (mais recentes primeiro)
-- **Limitação**: Máximo de 10 resultados para performance
-
-### ✅ Funcionalidades Anteriores
-### ✅ B3.P1.A3 - CRUD Completo com Título Inteligente (Novo)
-
-- **Endpoint DELETE `/api/chat/historicos/:id`**: Remove uma sessão por `_id`
-- **Endpoint POST `/api/chat/historicos/:id/gerar-titulo`**: Gera sugestão de título via Gemini
-- **Endpoint PUT `/api/chat/historicos/:id`**: Atualiza e salva o campo `titulo`
-- **Frontend**: Botões de ação “Gerar Título” e “Excluir” na lista de conversas, com confirmação e prompts
-
+## 🚀 Funcionalidades
 
 - **Chat Inteligente**: Respostas baseadas em IA usando Google Gemini
-- **Verificação de Horário**: Função para obter hora atual
-- **Previsão do Tempo**: Integração com OpenWeather API
-- **Logs de Acesso**: Registro de todas as interações
-- **Ranking de Bots**: Sistema de pontuação e ranking
-- **Interface Responsiva**: Design moderno e adaptável
+- **Previsão do Tempo**: Integração com OpenWeatherMap API
+- **Data e Hora**: Hora atual em fuso horário brasileiro
+- **Histórico de Conversas**: Armazenamento em MongoDB
+- **Interface Responsiva**: Design moderno e intuitivo
 
-## 🛠️ Tecnologias Utilizadas
+## ⚡ Problemas Corrigidos
 
-- **Backend**: Node.js, Express.js
-- **Banco de Dados**: MongoDB Atlas com Mongoose
-- **IA**: Google Gemini API
-- **Frontend**: HTML5, CSS3, JavaScript (Vanilla)
-- **APIs Externas**: OpenWeather API
-- **Deploy**: Render (Backend)
+### ✅ Data e Hora Corretas
+- Implementado fuso horário brasileiro (UTC-3)
+- Formatação adequada para o padrão brasileiro
+- Sincronização com servidor local
 
-## 📁 Estrutura do Projeto
+### ✅ Temperatura Precisa
+- Integração otimizada com OpenWeatherMap
+- Conversão de timestamp para hora local brasileira
+- Tratamento de erros e timeouts
+- Informações atualizadas em tempo real
 
-```
-chatBot-hist/
-├── server.js              # Servidor principal
-├── models/
-│   └── SessaoChat.js     # Modelo Mongoose para sessões
-├── client.js              # JavaScript do frontend
-├── index.html             # Interface principal
-├── style.css              # Estilos CSS
-├── package.json           # Dependências
-├── .env                   # Variáveis de ambiente
-└── README.md              # Documentação
-```
+### ✅ Performance Melhorada
+- Timeout de 30 segundos para respostas da IA
+- Timeout de 10 segundos para API de clima
+- Indicadores visuais de progresso
+- Cache e otimizações de resposta
 
-## 🔧 Configuração e Instalação
-
-### Pré-requisitos
-- Node.js (versão 14 ou superior)
-- Conta no MongoDB Atlas
-- Chave da API Google Gemini
-- Chave da API OpenWeather
-
-### Instalação
+## 🛠️ Instalação
 
 1. **Clone o repositório**
 ```bash
-git clone [URL_DO_REPOSITORIO]
+git clone <url-do-repositorio>
 cd chatBot-hist
 ```
 
@@ -77,153 +43,134 @@ npm install
 ```
 
 3. **Configure as variáveis de ambiente**
-Crie um arquivo `.env` na raiz do projeto:
-```env
-GOOGLE_API_KEY=sua_chave_api_gemini
-OPENWEATHER_API_KEY=sua_chave_api_openweather
-MONGO_URI_mari=sua_uri_mongodb_atlas
-MONGO_URI_prof=uri_banco_professor
-PORT=3000
+```bash
+# Copie o arquivo de exemplo
+cp config.example .env
+
+# Edite o arquivo .env com suas chaves
+nano .env
 ```
 
-4. **Configure o MongoDB Atlas**
-- Acesse o MongoDB Atlas
-- Adicione seu IP à whitelist
-- Configure a URI de conexão
+4. **Configure as APIs necessárias**
 
-5. **Execute o servidor**
+### Google Gemini API (Obrigatória)
+- Acesse [Google AI Studio](https://makersuite.google.com/app/apikey)
+- Crie uma nova chave API
+- Adicione no arquivo `.env`:
+```
+GOOGLE_API_KEY=sua_chave_aqui
+```
+
+### OpenWeatherMap API (Opcional)
+- Acesse [OpenWeatherMap](https://openweathermap.org/api)
+- Crie uma conta gratuita
+- Obtenha sua chave API
+- Adicione no arquivo `.env`:
+```
+OPENWEATHER_API_KEY=sua_chave_aqui
+```
+
+### MongoDB (Obrigatório)
+- Configure sua conexão MongoDB Atlas
+- Adicione no arquivo `.env`:
+```
+MONGO_URI_mari=mongodb+srv://usuario:senha@cluster.mongodb.net/banco
+```
+
+5. **Inicie o servidor**
 ```bash
 npm start
 ```
 
-## 📡 Endpoints da API
+## 🔧 Configuração
 
-### Chat e Histórico
-- `POST /chat` - Envia mensagem para o chatbot
-- `GET /api/chat/historicos` - Lista todas as sessões de chat
-- `GET /api/chat/historicos/:sessionId` - Detalhes de uma sessão específica
- - `DELETE /api/chat/historicos/:id` - Exclui uma sessão por `_id`
- - `POST /api/chat/historicos/:id/gerar-titulo` - Sugere um título via IA
- - `PUT /api/chat/historicos/:id` - Atualiza o `titulo` da sessão
+### Variáveis de Ambiente (.env)
 
-### Logs e Monitoramento
-- `POST /api/log-connection` - Registra logs de acesso
-- `GET /api/logs` - Visualiza logs de acesso
-- `GET /api/ranking/visualizar` - Visualiza ranking de bots
+```env
+# APIs (obrigatórias)
+GOOGLE_API_KEY=sua_chave_google
+MONGO_URI_mari=sua_uri_mongodb
 
-### Status e Testes
-- `GET /status` - Status do servidor e APIs
-- `GET /test-mongo` - Testa conexão com MongoDB
+# APIs (opcionais)
+OPENWEATHER_API_KEY=sua_chave_openweather
+MONGO_URI_prof=uri_mongodb_professor
 
-## 🎯 Como Usar
+# Configurações do servidor
+NODE_ENV=development
+PORT=3001
+```
 
-1. **Acesse a aplicação**: http://localhost:3000
-2. **Faça perguntas**: Digite suas dúvidas sobre história
-3. **Use os botões especiais**:
-   - ⏰ **Relógio**: Verificar hora atual
-   - ☀️ **Clima**: Consultar previsão do tempo
-   - 📚 **Histórico**: Ver conversas anteriores
+## 📱 Uso
 
-4. **Visualize o histórico**:
-   - Clique no botão de histórico
-   - Veja a lista de conversas salvas
-   - Clique em uma conversa para ver os detalhes
+1. **Acesse o chatbot** em `http://localhost:3001`
+2. **Faça perguntas sobre história** - o bot responderá usando IA
+3. **Verifique o clima** - clique no botão de clima e digite uma cidade
+4. **Veja a hora atual** - clique no botão de relógio
+5. **Acesse o histórico** - clique no botão de histórico
 
-## 🔍 Funcionalidades do Histórico
+## 🎯 Comandos Especiais
 
-### Interface do Histórico
-- **Lista de Sessões**: Mostra data, hora e número de mensagens
-- **Visualização Detalhada**: Exibe conversa completa com timestamps
-- **Design Responsivo**: Adapta-se a diferentes tamanhos de tela
-- **Estados de Carregamento**: Feedback visual durante operações
-
-### Persistência de Dados
-- **Salvamento Automático**: Cada conversa é salva automaticamente
-- **Estrutura Organizada**: Dados estruturados com sessionId, botId, timestamps
-- **Recuperação Robusta**: Sistema tolerante a falhas de conexão
+- **"Que horas são?"** - Mostra a hora atual em fuso brasileiro
+- **"Como está o tempo em [cidade]?"** - Previsão do tempo para uma cidade
+- **Perguntas sobre história** - Respostas detalhadas via IA
 
 ## 🚨 Solução de Problemas
 
-### Erro de Conexão com MongoDB
-```
-Erro: Could not connect to any servers in your MongoDB Atlas cluster
-```
-**Solução**: Adicione seu IP à whitelist do MongoDB Atlas
+### Chatbot não responde
+- Verifique se `GOOGLE_API_KEY` está configurada
+- Confirme se o servidor está rodando
+- Verifique os logs do console
 
-### Erro 400 no Log
-```
-Erro: Dados de log incompletos
-```
-**Solução**: Verifique se o endpoint `/api/log-connection` está recebendo os dados corretos
+### Data/hora incorretas
+- ✅ **Corrigido**: Implementado fuso horário brasileiro
+- O sistema agora usa UTC-3 automaticamente
 
-### Histórico Vazio
-```
-Nenhuma conversa salva ainda
-```
-**Solução**: Faça algumas conversas primeiro para gerar dados
+### Temperatura incorreta
+- ✅ **Corrigido**: Sincronização com fuso horário local
+- Adicionado timestamp de atualização
+- Timeout para evitar respostas lentas
 
-## 📊 Estrutura dos Dados
+### Respostas lentas
+- ✅ **Corrigido**: Implementado sistema de timeout
+- Indicadores visuais de progresso
+- Otimizações de performance
 
-### Modelo SessaoChat
-```javascript
-{
-  sessionId: String,        // ID único da sessão
-  botId: String,           // Nome do bot
-  startTime: Date,         // Início da conversa
-  endTime: Date,           // Fim da conversa (opcional)
-  titulo: String,          // Título curto da conversa (default: "Conversa Sem Título")
-  messages: [              // Array de mensagens
-    {
-      role: String,        // 'user' ou 'assistant'
-      content: String,     // Conteúdo da mensagem
-      timestamp: Date      // Horário da mensagem
-    }
-  ],
-  loggedAt: Date           // Data de registro
-}
-```
+### Erro de conexão MongoDB
+- Verifique se `MONGO_URI_mari` está correto
+- Confirme se seu IP está na whitelist do MongoDB Atlas
+- O servidor continuará funcionando sem MongoDB (funcionalidades limitadas)
 
-## 🎨 Interface do Usuário
+## 📊 Monitoramento
 
-### Características do Design
-- **Cores**: Azul (#1976d2) e verde (#4caf50) para diferenciação
-- **Tipografia**: Fonte legível e hierarquia clara
-- **Animações**: Transições suaves e feedback visual
-- **Responsividade**: Adaptação para mobile e desktop
+- **Logs de acesso** em `/api/logs`
+- **Status do servidor** em `/status`
+- **Histórico de conversas** em `/api/chat/historicos`
+- **Teste de conexão MongoDB** em `/test-mongo`
 
-### Componentes Principais
-- **Chat Container**: Área principal de conversa
-- **Modal de Histórico**: Lista e visualização de conversas
-- **Botões de Ação**: Acesso rápido a funcionalidades
-- **Indicador de Digitação**: Feedback durante processamento
+## 🔄 Atualizações Recentes
 
-## 🔐 Segurança
+- ✅ Correção do fuso horário brasileiro
+- ✅ Otimização da API de clima
+- ✅ Sistema de timeout para melhor performance
+- ✅ Indicadores visuais de progresso
+- ✅ Tratamento robusto de erros
 
-- **Validação de Entrada**: Verificação de dados antes do processamento
-- **Tratamento de Erros**: Captura e tratamento adequado de exceções
-- **Logs Seguros**: Registro de atividades sem exposição de dados sensíveis
-- **CORS Configurado**: Controle de acesso cross-origin
+## 📝 Licença
 
-## 📈 Melhorias Futuras
+Este projeto é desenvolvido para fins educacionais.
 
-- [ ] Paginação no histórico
-- [ ] Filtros por data/bot
-- [ ] Exportação de conversas
-- [ ] Sistema de busca no histórico
-- [ ] Notificações em tempo real
-- [ ] Autenticação de usuários
+## 🤝 Contribuição
 
-## 👨‍💻 Autora
+Para contribuir com o projeto:
+1. Faça um fork do repositório
+2. Crie uma branch para sua feature
+3. Commit suas mudanças
+4. Abra um Pull Request
 
-**Mariani Denig**
-- Email: marianileme10@gmail.com
-- Instagram: [@mari.denig](https://www.instagram.com/mari.denig/)
-- Projeto desenvolvido para o IFPR
+## 📞 Suporte
 
-## 📄 Licença
-
-Este projeto foi desenvolvido como parte do curso de desenvolvimento web no IFPR.
-
----
-
-**Status do Projeto**: ✅ Completo - B3.P1.A2 implementado e B3.P1.A3 (CRUD com Título Inteligente) adicionado!
+Em caso de problemas:
+1. Verifique os logs do console
+2. Confirme as configurações no arquivo `.env`
+3. Teste as APIs individualmente
+4. Abra uma issue no repositório
