@@ -89,9 +89,18 @@ async function connectDB() {
         if (!isMongoConnected) {
             console.log('Tentando conectar ao MongoDB com URI:', process.env.MONGO_URI_mari);
             
+            // Adicionar timeout e opções de reconexão
             await mongoose.connect(process.env.MONGO_URI_mari, {
                 useNewUrlParser: true,
-                useUnifiedTopology: true
+                useUnifiedTopology: true,
+                serverSelectionTimeoutMS: 10000, // 10 segundos timeout
+                socketTimeoutMS: 45000, // 45 segundos timeout para operações
+                connectTimeoutMS: 10000, // 10 segundos para conexão inicial
+                maxPoolSize: 10, // Máximo de conexões no pool
+                minPoolSize: 1, // Mínimo de conexões no pool
+                maxIdleTimeMS: 30000, // 30 segundos para conexões ociosas
+                retryWrites: true,
+                w: 'majority'
             });
             
             isMongoConnected = true;
@@ -102,7 +111,18 @@ async function connectDB() {
         isMongoConnected = false;
         console.error('Erro detalhado ao conectar ao MongoDB:', error);
         console.log('⚠️  AVISO: Servidor continuará funcionando sem MongoDB. Algumas funcionalidades podem não estar disponíveis.');
-        console.log('💡 Para resolver: Adicione seu IP à whitelist do MongoDB Atlas');
+        console.log('💡 Para resolver: Verifique sua string de conexão e adicione seu IP à whitelist do MongoDB Atlas');
+        
+        // Tentar reconectar automaticamente após 30 segundos
+        setTimeout(async () => {
+            console.log('Tentando reconectar ao MongoDB...');
+            try {
+                await connectDB();
+            } catch (reconnectError) {
+                console.log('Reconexão falhou, tentando novamente em 60 segundos...');
+            }
+        }, 30000);
+        
         // Não lança erro para permitir que o servidor continue
         return null;
     }
@@ -517,7 +537,14 @@ app.post('/chat', async (req, res) => {
             });
         }
 
-        const botResponse = await generateResponse(message, history);
+        // Gerar resposta do bot primeiro
+        let botResponse;
+        try {
+            botResponse = await generateResponse(message, history);
+        } catch (responseError) {
+            console.error('Erro ao gerar resposta:', responseError);
+            botResponse = 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.';
+        }
         
         // Determinar o tipo de interação
         let tipo = 'geral';
@@ -529,7 +556,7 @@ app.post('/chat', async (req, res) => {
             tipo = 'historico';
         }
 
-        // Salvar a interação no histórico (coleção antiga)
+        // Salvar a interação no histórico (coleção antiga) com melhor tratamento de erro
         try {
             const db = await connectDB();
             if (db) {
@@ -542,17 +569,21 @@ app.post('/chat', async (req, res) => {
                     tipo: tipo,
                     timestamp: new Date()
                 });
+                console.log('Histórico do chat salvo com sucesso na coleção antiga');
+            } else {
+                console.log('MongoDB não disponível, pulando salvamento na coleção antiga');
             }
         } catch (error) {
-            console.error('Erro ao salvar histórico do chat:', error);
+            console.error('Erro ao salvar histórico do chat na coleção antiga:', error);
             // Não interrompe o fluxo se falhar ao salvar o histórico
         }
 
-        // Salvar sessão de chat usando Mongoose (nova funcionalidade)
+        // Salvar sessão de chat usando Mongoose (nova funcionalidade) com melhor tratamento de erro
+        let sessionId = null;
         try {
             if (isMongoConnected) {
                 // Usar sessionId do cliente quando fornecido, senão gerar um
-                const sessionId = clientSessionId && String(clientSessionId).trim()
+                sessionId = clientSessionId && String(clientSessionId).trim()
                     ? String(clientSessionId).trim()
                     : `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
@@ -566,6 +597,7 @@ app.post('/chat', async (req, res) => {
                         { role: 'assistant', content: botResponse, timestamp: new Date() }
                     );
                     await sessaoExistente.save();
+                    console.log('Sessão de chat atualizada:', sessionId);
                 } else {
                     // Criar nova sessão
                     const novaSessao = new SessaoChat({
@@ -580,12 +612,18 @@ app.post('/chat', async (req, res) => {
                     await novaSessao.save();
                     console.log('Nova sessão de chat salva:', sessionId);
                 }
-
-                // Incluir sessionId no response para o cliente persistir
-                res.locals.sessionId = sessionId;
+            } else {
+                console.log('MongoDB não conectado, usando fallback em memória');
             }
-            // Fallback memória: se Mongo indisponível, salvar/append na memória
-            if (!isMongoConnected) {
+        } catch (error) {
+            console.error('Erro ao salvar sessão de chat:', error);
+            // Fallback: se Mongo falhar, usar memória
+            console.log('Usando fallback em memória para sessão de chat');
+        }
+
+        // Fallback memória: se Mongo indisponível ou falhar, salvar/append na memória
+        if (!isMongoConnected || !sessionId) {
+            try {
                 const mem = inMemorySessions.get(clientSessionId) || {
                     sessionId: clientSessionId || `session_${Date.now()}`,
                     botId: 'Mari_Chatbot',
@@ -597,11 +635,18 @@ app.post('/chat', async (req, res) => {
                     { role: 'assistant', content: botResponse, timestamp: new Date() }
                 );
                 inMemorySessions.set(mem.sessionId, mem);
-                res.locals.sessionId = mem.sessionId;
+                sessionId = mem.sessionId;
+                console.log('Sessão salva em memória:', sessionId);
+            } catch (memoryError) {
+                console.error('Erro ao salvar em memória:', memoryError);
+                // Gerar um sessionId básico como último recurso
+                sessionId = `fallback_${Date.now()}`;
             }
-        } catch (error) {
-            console.error('Erro ao salvar sessão de chat:', error);
-            // Não interrompe o fluxo se falhar ao salvar a sessão
+        }
+
+        // Garantir que sempre temos um sessionId válido
+        if (!sessionId) {
+            sessionId = `emergency_${Date.now()}`;
         }
 
         const response = {
@@ -610,9 +655,11 @@ app.post('/chat', async (req, res) => {
                 { role: 'user', content: message }, 
                 { role: 'assistant', content: botResponse }
             ],
-            sessionId: res.locals.sessionId || clientSessionId || null
+            sessionId: sessionId,
+            timestamp: new Date().toISOString()
         };
 
+        console.log('Resposta enviada com sucesso, sessionId:', sessionId);
         res.json(response);
 
     } catch (error) {
@@ -628,10 +675,20 @@ app.post('/chat', async (req, res) => {
             errorDetails = 'Não foi possível conectar ao servidor. Por favor, verifique se o servidor está rodando e tente novamente.';
         }
 
-        res.status(500).json({ 
-            error: errorMessage,
-            details: errorDetails
-        });
+        // Mesmo com erro, tentar retornar uma resposta básica
+        const fallbackResponse = {
+            response: errorMessage,
+            history: [...(req.body.history || []), 
+                { role: 'user', content: req.body.message || 'Mensagem não fornecida' }, 
+                { role: 'assistant', content: errorMessage }
+            ],
+            sessionId: req.body.sessionId || `error_${Date.now()}`,
+            error: true,
+            details: errorDetails,
+            timestamp: new Date().toISOString()
+        };
+
+        res.status(500).json(fallbackResponse);
     }
 });
 
@@ -1078,17 +1135,70 @@ app.get('/api/logs', async (req, res) => {
 app.get('/test-mongo', async (req, res) => {
     try {
         if (!isMongoConnected) {
+            console.log('Tentando conectar ao MongoDB...');
             await connectDB();
         }
-        res.json({ 
-            status: 'success', 
+        
+        const status = {
+            status: 'success',
             message: 'Conexão com MongoDB estabelecida',
-            isConnected: isMongoConnected
-        });
+            isConnected: isMongoConnected,
+            timestamp: new Date().toISOString(),
+            environment: process.env.NODE_ENV || 'development',
+            mongoUri: process.env.MONGO_URI_mari ? 'Configurada' : 'Não configurada',
+            googleApi: process.env.GOOGLE_API_KEY ? 'Configurada' : 'Não configurada'
+        };
+        
+        res.json(status);
     } catch (error) {
+        console.error('Erro no teste de conexão:', error);
         res.status(500).json({ 
             status: 'error', 
             message: 'Erro ao conectar com MongoDB',
+            error: error.message,
+            timestamp: new Date().toISOString(),
+            environment: process.env.NODE_ENV || 'development'
+        });
+    }
+});
+
+// Endpoint para testar funcionalidades específicas
+app.get('/test-functions', async (req, res) => {
+    try {
+        const tests = {
+            mongodb: {
+                connected: isMongoConnected,
+                collections: []
+            },
+            apis: {
+                google: !!process.env.GOOGLE_API_KEY,
+                openweather: !!process.env.OPENWEATHER_API_KEY
+            },
+            memory: {
+                sessions: inMemorySessions.size
+            }
+        };
+        
+        // Testar MongoDB se conectado
+        if (isMongoConnected) {
+            try {
+                const db = mongoose.connection.db;
+                const collections = await db.listCollections().toArray();
+                tests.mongodb.collections = collections.map(c => c.name);
+            } catch (mongoError) {
+                tests.mongodb.error = mongoError.message;
+            }
+        }
+        
+        res.json({
+            status: 'success',
+            timestamp: new Date().toISOString(),
+            tests: tests
+        });
+    } catch (error) {
+        res.status(500).json({
+            status: 'error',
+            message: 'Erro ao executar testes',
             error: error.message
         });
     }

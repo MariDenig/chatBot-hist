@@ -871,3 +871,70 @@ body {
         max-height: 200px;
     }
 } 
+
+/* Indicador de Status do Servidor */
+.status-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-right: 10px;
+}
+
+.status-indicator {
+    font-size: 16px;
+    padding: 4px;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+.status-indicator.online {
+    color: #4caf50;
+    animation: pulse 2s infinite;
+}
+
+.status-indicator.offline {
+    color: #ff9800;
+    animation: pulse 2s infinite;
+}
+
+.status-indicator.error {
+    color: #f44336;
+    animation: pulse 1s infinite;
+}
+
+.status-button {
+    background: none;
+    border: none;
+    color: #666;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 50%;
+    transition: all 0.3s ease;
+}
+
+.status-button:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+    color: #333;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.5; }
+    100% { opacity: 1; }
+}
+
+/* Botão de retry para histórico */
+.retry-button {
+    background-color: #1976d2;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: background-color 0.3s ease;
+}
+
+.retry-button:hover {
+    background-color: #1565c0;
+} 

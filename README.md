@@ -1,176 +1,188 @@
-# Chatbot Historiador - Mari
+# Chatbot Historiador
 
-Um chatbot inteligente especializado em história, desenvolvido com Node.js, Express e Google Gemini AI.
+Um chatbot especializado em história desenvolvido com Node.js, Express e MongoDB, integrado com a API Gemini da Google.
 
-## 🚀 Funcionalidades
+## 🚨 Problemas Corrigidos
 
-- **Chat Inteligente**: Respostas baseadas em IA usando Google Gemini
-- **Previsão do Tempo**: Integração com OpenWeatherMap API
-- **Data e Hora**: Hora atual em fuso horário brasileiro
-- **Histórico de Conversas**: Armazenamento em MongoDB
-- **Interface Responsiva**: Design moderno e intuitivo
+### 1. Falhas ao Salvar Histórico na Hospedagem
+- ✅ Timeouts configurados para conexões MongoDB
+- ✅ Reconexão automática em caso de falha
+- ✅ Fallback para armazenamento em memória
+- ✅ Melhor tratamento de erros e logs
 
-## ⚡ Problemas Corrigidos
+### 2. Função de Modificar Título Não Funcionando
+- ✅ Tratamento de erros robusto no frontend
+- ✅ Fallback para atualização via sessionId
+- ✅ Validação de dados antes de enviar
+- ✅ Logs detalhados para debug
 
-### ✅ Data e Hora Corretas
-- Implementado fuso horário brasileiro (UTC-3)
-- Formatação adequada para o padrão brasileiro
-- Sincronização com servidor local
+## 🚀 Como Executar
 
-### ✅ Temperatura Precisa
-- Integração otimizada com OpenWeatherMap
-- Conversão de timestamp para hora local brasileira
-- Tratamento de erros e timeouts
-- Informações atualizadas em tempo real
+### Pré-requisitos
+- Node.js 16+
+- MongoDB Atlas (ou local)
+- Chave da API Google Gemini
 
-### ✅ Performance Melhorada
-- Timeout de 30 segundos para respostas da IA
-- Timeout de 10 segundos para API de clima
-- Indicadores visuais de progresso
-- Cache e otimizações de resposta
-
-## 🛠️ Instalação
-
-1. **Clone o repositório**
+### Instalação
 ```bash
+# Clonar o repositório
 git clone <url-do-repositorio>
 cd chatBot-hist
-```
 
-2. **Instale as dependências**
-```bash
+# Instalar dependências
 npm install
-```
 
-3. **Configure as variáveis de ambiente**
-```bash
-# Copie o arquivo de exemplo
-cp config.example .env
+# Configurar variáveis de ambiente
+cp .env.example .env
+# Editar .env com suas configurações
 
-# Edite o arquivo .env com suas chaves
-nano .env
-```
-
-4. **Configure as APIs necessárias**
-
-### Google Gemini API (Obrigatória)
-- Acesse [Google AI Studio](https://makersuite.google.com/app/apikey)
-- Crie uma nova chave API
-- Adicione no arquivo `.env`:
-```
-GOOGLE_API_KEY=sua_chave_aqui
-```
-
-### OpenWeatherMap API (Opcional)
-- Acesse [OpenWeatherMap](https://openweathermap.org/api)
-- Crie uma conta gratuita
-- Obtenha sua chave API
-- Adicione no arquivo `.env`:
-```
-OPENWEATHER_API_KEY=sua_chave_aqui
-```
-
-### MongoDB (Obrigatório)
-- Configure sua conexão MongoDB Atlas
-- Adicione no arquivo `.env`:
-```
-MONGO_URI_mari=mongodb+srv://usuario:senha@cluster.mongodb.net/banco
-```
-
-5. **Inicie o servidor**
-```bash
+# Executar
 npm start
 ```
 
-## 🔧 Configuração
+### Configuração das Variáveis de Ambiente
+Crie um arquivo `.env` na raiz do projeto:
 
-### Variáveis de Ambiente (.env)
+```bash
+# MongoDB
+MONGO_URI_mari=mongodb+srv://usuario:senha@cluster.mongodb.net/banco?retryWrites=true&w=majority
+MONGO_URI_prof=mongodb+srv://user_log_acess:Log4c3ss2025@cluster0.nbt3sks.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
 
-```env
-# APIs (obrigatórias)
-GOOGLE_API_KEY=sua_chave_google
-MONGO_URI_mari=sua_uri_mongodb
-
-# APIs (opcionais)
+# APIs
+GOOGLE_API_KEY=sua_chave_gemini
 OPENWEATHER_API_KEY=sua_chave_openweather
-MONGO_URI_prof=uri_mongodb_professor
 
-# Configurações do servidor
-NODE_ENV=development
+# Servidor
 PORT=3001
+NODE_ENV=production
 ```
 
-## 📱 Uso
+## 🧪 Testes
 
-1. **Acesse o chatbot** em `http://localhost:3001`
-2. **Faça perguntas sobre história** - o bot responderá usando IA
-3. **Verifique o clima** - clique no botão de clima e digite uma cidade
-4. **Veja a hora atual** - clique no botão de relógio
-5. **Acesse o histórico** - clique no botão de histórico
+### Teste Local
+```bash
+npm run dev
+```
 
-## 🎯 Comandos Especiais
+### Teste de Hospedagem
+```bash
+node test-hospedagem.js
+```
 
-- **"Que horas são?"** - Mostra a hora atual em fuso brasileiro
-- **"Como está o tempo em [cidade]?"** - Previsão do tempo para uma cidade
-- **Perguntas sobre história** - Respostas detalhadas via IA
+### Endpoints de Teste
+- `/status` - Status geral do servidor
+- `/test-mongo` - Teste de conexão MongoDB
+- `/test-functions` - Teste de funcionalidades
 
-## 🚨 Solução de Problemas
+## 🔧 Funcionalidades
 
-### Chatbot não responde
-- Verifique se `GOOGLE_API_KEY` está configurada
-- Confirme se o servidor está rodando
-- Verifique os logs do console
+### Chat
+- ✅ Respostas baseadas em história via Gemini
+- ✅ Verificação de clima
+- ✅ Verificação de horário
+- ✅ Histórico de conversas
 
-### Data/hora incorretas
-- ✅ **Corrigido**: Implementado fuso horário brasileiro
-- O sistema agora usa UTC-3 automaticamente
+### Histórico
+- ✅ Salvamento automático de sessões
+- ✅ Edição de títulos
+- ✅ Geração automática de títulos
+- ✅ Exclusão de conversas
+- ✅ Visualização detalhada
 
-### Temperatura incorreta
-- ✅ **Corrigido**: Sincronização com fuso horário local
-- Adicionado timestamp de atualização
-- Timeout para evitar respostas lentas
+### Logs
+- ✅ Registro de acessos
+- ✅ Logs de interações
+- ✅ Sistema de ranking
 
-### Respostas lentas
-- ✅ **Corrigido**: Implementado sistema de timeout
-- Indicadores visuais de progresso
-- Otimizações de performance
+## 🐛 Troubleshooting
 
-### Erro de conexão MongoDB
-- Verifique se `MONGO_URI_mari` está correto
-- Confirme se seu IP está na whitelist do MongoDB Atlas
-- O servidor continuará funcionando sem MongoDB (funcionalidades limitadas)
+### Se o histórico não salvar:
+1. Verificar conexão MongoDB: `/test-mongo`
+2. Verificar logs do servidor
+3. Verificar se IP está na whitelist
+4. Testar string de conexão
+
+### Se editar título não funcionar:
+1. Verificar console do navegador
+2. Verificar se sessão tem _id válido
+3. Testar endpoint de atualização
+4. Verificar permissões do usuário MongoDB
+
+### Se gerar título falhar:
+1. Verificar API Gemini
+2. Verificar logs de erro
+3. Testar endpoint de geração
+4. Verificar formato da resposta
+
+## 📁 Estrutura do Projeto
+
+```
+chatBot-hist/
+├── server.js              # Servidor principal
+├── client.js              # Lógica do frontend
+├── index.html             # Interface do usuário
+├── style.css              # Estilos
+├── models/
+│   └── SessaoChat.js      # Modelo MongoDB
+├── test-hospedagem.js     # Script de teste
+├── CONFIGURACAO.md        # Guia de configuração
+└── package.json           # Dependências
+```
+
+## 🌐 Hospedagem
+
+### Render.com
+- ✅ Configuração automática
+- ✅ Variáveis de ambiente via dashboard
+- ✅ Logs disponíveis
+- ✅ Rede permite MongoDB
+
+### Vercel
+- ⚠️ Apenas frontend (sem backend)
+- ✅ Deploy automático
+- ✅ Domínio personalizado
+
+### Outras
+- ✅ Qualquer serviço que suporte Node.js
+- ✅ MongoDB Atlas para banco
+- ✅ Variáveis de ambiente configuradas
 
 ## 📊 Monitoramento
 
-- **Logs de acesso** em `/api/logs`
-- **Status do servidor** em `/status`
-- **Histórico de conversas** em `/api/chat/historicos`
-- **Teste de conexão MongoDB** em `/test-mongo`
+### Logs do Servidor
+- Conexões MongoDB
+- Erros de API
+- Requisições recebidas
+- Status de funcionalidades
 
-## 🔄 Atualizações Recentes
-
-- ✅ Correção do fuso horário brasileiro
-- ✅ Otimização da API de clima
-- ✅ Sistema de timeout para melhor performance
-- ✅ Indicadores visuais de progresso
-- ✅ Tratamento robusto de erros
-
-## 📝 Licença
-
-Este projeto é desenvolvido para fins educacionais.
+### Métricas
+- Sessões ativas
+- Mensagens processadas
+- Tempo de resposta
+- Status de conectividade
 
 ## 🤝 Contribuição
 
-Para contribuir com o projeto:
-1. Faça um fork do repositório
+1. Fork o projeto
 2. Crie uma branch para sua feature
 3. Commit suas mudanças
-4. Abra um Pull Request
+4. Push para a branch
+5. Abra um Pull Request
 
-## 📞 Suporte
+## 📄 Licença
 
-Em caso de problemas:
-1. Verifique os logs do console
-2. Confirme as configurações no arquivo `.env`
-3. Teste as APIs individualmente
+Este projeto está sob a licença MIT. Veja o arquivo LICENSE para mais detalhes.
+
+## 👨‍💻 Autora
+
+**Mariani Denig**
+- Email: marianileme10@gmail.com
+- Instagram: [@mari.denig](https://www.instagram.com/mari.denig/)
+
+## 🆘 Suporte
+
+Para suporte técnico ou dúvidas:
+1. Verifique os logs do servidor
+2. Execute o script de teste
+3. Consulte o arquivo CONFIGURACAO.md
 4. Abra uma issue no repositório
