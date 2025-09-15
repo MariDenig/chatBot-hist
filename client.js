@@ -1,4 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
+    // Definir base da API dinamicamente (ambiente local vs produção)
+    const API_BASE = window.API_BASE 
+        || (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+            ? 'http://localhost:3001'
+            : 'https://chatbot-historia.onrender.com');
     const chatMessages = document.getElementById('chat-messages');
     const userInput = document.getElementById('user-input');
     const sendButton = document.getElementById('send-button');
@@ -141,7 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Função para verificar status do servidor
     async function verificarStatusServidor() {
         try {
-            const response = await fetch('https://chatbot-historia.onrender.com/status');
+            const response = await fetch(`${API_BASE}/status`);
             if (response.ok) {
                 const status = await response.json();
                 console.log('Status do servidor:', status);
@@ -189,7 +194,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 tentativas++;
                 console.log(`Tentativa ${tentativas} de carregar histórico de sessões...`);
                 
-                const response = await fetch('https://chatbot-historia.onrender.com/api/chat/historicos', {
+                const response = await fetch(`${API_BASE}/api/chat/historicos`, {
                     method: 'GET',
                     headers: {
                         'Content-Type': 'application/json'
@@ -345,7 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 
                                 if (sessao._id) {
                                     // Tentar atualizar via MongoDB primeiro
-                                    resp = await fetch(`https://chatbot-historia.onrender.com/api/chat/historicos/${sessao._id}`, {
+                                    resp = await fetch(`${API_BASE}/api/chat/historicos/${sessao._id}`, {
                                         method: 'PUT',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({ titulo: tituloAjustado })
@@ -364,7 +369,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                     }
                                 } else if (sessao.sessionId) {
                                     // Fallback: atualizar via sessionId
-                                    resp = await fetch(`https://chatbot-historia.onrender.com/api/chat/historicos/session/${sessao.sessionId}`, {
+                                    resp = await fetch(`${API_BASE}/api/chat/historicos/session/${sessao.sessionId}`, {
                                         method: 'PUT',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({ titulo: tituloAjustado })
@@ -521,7 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const confirmado = confirm('Tem certeza que deseja excluir esta conversa? Esta ação não pode ser desfeita.');
             if (!confirmado) return;
 
-            const response = await fetch(`https://chatbot-historia.onrender.com/api/chat/historicos/${sessionMongoId}`, {
+            const response = await fetch(`${API_BASE}/api/chat/historicos/${sessionMongoId}`, {
                 method: 'DELETE'
             });
 
@@ -571,7 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     tentativas++;
                     console.log(`Tentativa ${tentativas} de gerar título...`);
                     
-                    const respSugestao = await fetch(`https://chatbot-historia.onrender.com/api/chat/historicos/${sessionMongoId}/gerar-titulo`, {
+                    const respSugestao = await fetch(`${API_BASE}/api/chat/historicos/${sessionMongoId}/gerar-titulo`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json'
@@ -635,7 +640,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     tentativas++;
                     console.log(`Tentativa ${tentativas} de salvar título...`);
                     
-                    const respSalvar = await fetch(`https://chatbot-historia.onrender.com/api/chat/historicos/${sessionMongoId}`, {
+                    const respSalvar = await fetch(`${API_BASE}/api/chat/historicos/${sessionMongoId}`, {
                         method: 'PUT',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ titulo: tituloAjustado })
@@ -747,7 +752,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 responseTimeIndicator.textContent = 'Conectando ao servidor...';
             }
             
-            const response = await fetch('https://chatbot-historia.onrender.com/chat', {
+            const response = await fetch(`${API_BASE}/chat`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -844,7 +849,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 acao: acao
             };
 
-            const response = await fetch('https://chatbot-historia.onrender.com/api/log-connection', {
+            const response = await fetch(`${API_BASE}/api/log-connection`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -871,7 +876,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 timestampAcesso: new Date().toISOString()
             };
 
-            const response = await fetch('https://chatbot-historia.onrender.com/api/ranking/registrar-acesso-bot', {
+            const response = await fetch(`${API_BASE}/api/ranking/registrar-acesso-bot`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -887,7 +892,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 nomeBot: 'Mari_Chatbot'
             };
             
-            const responseLog = await fetch('https://chatbot-historia.onrender.com/api/log-connection', {
+            const responseLog = await fetch(`${API_BASE}/api/log-connection`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

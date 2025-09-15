@@ -8,6 +8,7 @@ const { MongoClient } = require('mongodb');
 const mongoose = require('mongoose');
 const mongooseProf = require('mongoose');
 const SessaoChat = require('./models/SessaoChat');
+const Configuracao = require('./models/Configuracao');
 
 // Verificar se o arquivo .env existe
 const envPath = path.join(__dirname, '.env');
@@ -19,10 +20,25 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const ADMIN_SECRET = process.env.ADMIN_SECRET || 'troque-esta-senha';
 
 // Configuração do CORS
 app.use(cors({
-    origin: ['https://chat-bot-hist.vercel.app','https://chatbot-historia.onrender.com', 'http://localhost:3000'],
+    origin: (origin, callback) => {
+        // Permitir chamadas sem origem (file://, ferramentas) e origens conhecidas
+        const allowed = [
+            'https://chat-bot-hist.vercel.app',
+            'https://chatbot-historia.onrender.com',
+            'http://localhost:3000',
+            'http://localhost:3001',
+            'http://127.0.0.1:3000',
+            'http://127.0.0.1:3001'
+        ];
+        if (!origin || allowed.includes(origin)) {
+            return callback(null, true);
+        }
+        return callback(new Error('Not allowed by CORS'));
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     credentials: true
 }));
@@ -436,8 +452,13 @@ async function generateResponse(message, history) {
         });
 
         // Preparar o prompt com timeout
-        const prompt = `Você é um historiador especializado. Responda à seguinte pergunta de forma detalhada e precisa:
-${message}`;
+        // Carregar instrução global configurável (se existir)
+        const systemInstruction = await getSystemInstruction();
+        const baseInstrucao = systemInstruction && systemInstruction.trim().length > 0
+            ? systemInstruction.trim()
+            : 'Você é um historiador especializado. Responda de forma clara, precisa e didática.';
+
+        const prompt = `${baseInstrucao}\n\nPergunta do usuário:\n${message}`;
 
         // Gerar resposta com timeout
         const controller = new AbortController();
@@ -507,6 +528,123 @@ app.get('/favicon.ico', (req, res) => res.status(204).end());
 app.get('/', (req, res) => {
     console.log('Acessando rota principal');
     res.sendFile(path.join(__dirname, '', 'index.html'));
+});
+
+// Rota para servir a página de administração
+app.get('/admin', (req, res) => {
+    res.sendFile(path.join(__dirname, '', 'admin.html'));
+});
+
+// Middleware simples de autenticação de administrador por header
+function requireAdmin(req, res, next) {
+    const provided = req.headers['x-admin-secret'] || req.query.admin_secret;
+    if (!provided || String(provided) !== String(ADMIN_SECRET)) {
+        return res.status(403).json({ error: 'Acesso negado' });
+    }
+    return next();
+}
+
+// Utilitário: obter instrução de sistema global
+async function getSystemInstruction() {
+    try {
+        if (!isMongoConnected) return null;
+        const cfg = await Configuracao.findOne({ chave: 'system_instruction' });
+        if (cfg && cfg.valor && typeof cfg.valor === 'string' && cfg.valor.trim()) {
+            return cfg.valor.trim();
+        }
+        return null;
+    } catch (e) {
+        console.warn('Falha ao carregar system_instruction:', e.message);
+        return null;
+    }
+}
+
+// Endpoints de administração
+// GET /api/admin/stats
+app.get('/api/admin/stats', requireAdmin, async (req, res) => {
+    try {
+        // Se Mongo indisponível, retornar métricas básicas de memória
+        if (!isMongoConnected) {
+            const totalMem = inMemorySessions.size;
+            const ultimasMem = Array.from(inMemorySessions.values())
+                .sort((a, b) => (b.startTime || 0) - (a.startTime || 0))
+                .slice(0, 5)
+                .map(s => ({
+                    sessionId: s.sessionId,
+                    titulo: s.titulo || 'Conversa Sem Título',
+                    startTime: s.startTime,
+                    messages: s.messages?.length || 0
+                }));
+            return res.json({
+                mongoConnected: false,
+                totalConversas: totalMem,
+                totalMensagens: ultimasMem.reduce((acc, s) => acc + s.messages, 0),
+                ultimasConversas: ultimasMem
+            });
+        }
+
+        const totalConversas = await SessaoChat.countDocuments({});
+        // Total mensagens: somatório do tamanho do array messages
+        const agg = await SessaoChat.aggregate([
+            { $project: { count: { $size: { $ifNull: ['$messages', []] } }, startTime: 1, titulo: 1, sessionId: 1 } },
+            { $facet: {
+                totalMensagens: [ { $group: { _id: null, total: { $sum: '$count' } } } ],
+                ultimas: [ { $sort: { startTime: -1 } }, { $limit: 5 } ]
+            } }
+        ]);
+
+        const totalMensagens = agg[0]?.totalMensagens?.[0]?.total || 0;
+        const ultimas = (agg[0]?.ultimas || []).map(s => ({
+            sessionId: s.sessionId,
+            titulo: s.titulo || 'Conversa Sem Título',
+            startTime: s.startTime,
+            messages: s.count
+        }));
+
+        res.json({
+            mongoConnected: true,
+            totalConversas,
+            totalMensagens,
+            ultimasConversas: ultimas
+        });
+    } catch (error) {
+        console.error('Erro em /api/admin/stats:', error);
+        res.status(500).json({ error: 'Erro ao obter estatísticas' });
+    }
+});
+
+// GET /api/admin/system-instruction
+app.get('/api/admin/system-instruction', requireAdmin, async (req, res) => {
+    try {
+        if (!isMongoConnected) return res.json({ instruction: '' });
+        const cfg = await Configuracao.findOne({ chave: 'system_instruction' });
+        res.json({ instruction: (cfg?.valor || '').toString() });
+    } catch (error) {
+        console.error('Erro ao ler system-instruction:', error);
+        res.status(500).json({ error: 'Erro ao ler instrução' });
+    }
+});
+
+// POST /api/admin/system-instruction
+app.post('/api/admin/system-instruction', requireAdmin, async (req, res) => {
+    try {
+        const { instruction } = req.body || {};
+        if (typeof instruction !== 'string' || !instruction.trim()) {
+            return res.status(400).json({ error: 'Instrução inválida' });
+        }
+        if (!isMongoConnected) {
+            return res.status(503).json({ error: 'MongoDB indisponível' });
+        }
+        const atualizado = await Configuracao.findOneAndUpdate(
+            { chave: 'system_instruction' },
+            { $set: { valor: instruction.trim(), atualizadoEm: new Date() } },
+            { new: true, upsert: true }
+        );
+        res.json({ saved: true, instruction: atualizado.valor });
+    } catch (error) {
+        console.error('Erro ao salvar system-instruction:', error);
+        res.status(500).json({ error: 'Erro ao salvar instrução' });
+    }
 });
 
 // Rota para verificar status do servidor
