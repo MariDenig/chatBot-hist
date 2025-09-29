@@ -448,7 +448,7 @@ async function generateResponse(message, history) {
         // Se não for uma função especial, usar o Gemini
         console.log('Usando Gemini para resposta...');
         const model = genAI.getGenerativeModel({ 
-            model: "gemini-2.0-flash"
+            model: "gemini-2.5-flash"
         });
 
         // Preparar o prompt com timeout
@@ -1103,7 +1103,7 @@ app.post('/api/chat/historicos/:id/gerar-titulo', async (req, res) => {
             .map(m => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
             .join('\n');
 
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
         const prompt = [
             'Considere a conversa abaixo e sugira um título curto, conciso e claro (máximo 5 palavras).',
             'Responda com APENAS o título, sem aspas, sem ponto final.',

@@ -2,12 +2,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // Definir base da API dinamicamente (ambiente local vs produção)
     const API_BASE = window.API_BASE 
         || (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
-            ? 'http://localhost:3001'
+            ? 'http://localhost:3000'
             : 'https://chatbot-historia.onrender.com');
     const chatMessages = document.getElementById('chat-messages');
     const userInput = document.getElementById('user-input');
     const sendButton = document.getElementById('send-button');
     const historyButton = document.getElementById('history-button');
+    const adminButton = document.getElementById('admin-button');
     const timeButton = document.getElementById('time-button');
     const weatherButton = document.getElementById('weather-button');
     const historyModal = document.getElementById('history-modal');
@@ -23,6 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let conversationHistory = []; // Armazenar conversas completas
     let isProcessing = false; // Controlar estado de processamento
     let sessionId = localStorage.getItem('chat_session_id') || null;
+    let backendOnline = false; // Estado do backend
 
     // Criar indicador de digitação
     const typingIndicator = document.createElement('div');
@@ -164,6 +166,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         statusIndicator.innerHTML = '🟡';
                     }
                 }
+                backendOnline = true;
                 
                 return status;
             } else {
@@ -179,6 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusIndicator.title = 'Servidor offline';
                 statusIndicator.innerHTML = '🔴';
             }
+            backendOnline = false;
             
             return null;
         }
@@ -744,6 +748,13 @@ document.addEventListener('DOMContentLoaded', () => {
     async function processBotRequest(message) {
         const startTime = Date.now();
         try {
+            if (!backendOnline) {
+                // Tentar checar status rapidamente antes de falhar
+                await verificarStatusServidor();
+                if (!backendOnline) {
+                    throw Object.assign(new Error('Servidor offline. Tente novamente em alguns segundos.'), { type: 'network_error' });
+                }
+            }
             console.log('Enviando mensagem para o servidor:', message);
             console.log('Histórico atual:', chatHistory);
             
@@ -911,15 +922,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Registrar acesso inicial
-    registrarConexaoUsuario('acesso_inicial_chatbot_Mari');
-    registrarAcessoBotParaRanking();
-
-    // Verificar status do servidor ao carregar
-    verificarStatusServidor();
-
-    // Verificar status periodicamente (a cada 30 segundos)
-    setInterval(verificarStatusServidor, 30000);
+    // Inicialização: aguardar backend ficar online antes das chamadas iniciais
+    (async () => {
+        // Tentativas rápidas de verificar status na inicialização
+        const maxTentativas = 15;
+        let tentativa = 0;
+        while (tentativa < maxTentativas) {
+            tentativa++;
+            const status = await verificarStatusServidor();
+            if (status) break;
+            await new Promise(r => setTimeout(r, 2000));
+        }
+        if (backendOnline) {
+            // Registrar acesso inicial quando online
+            registrarConexaoUsuario('acesso_inicial_chatbot_Mari');
+            registrarAcessoBotParaRanking();
+        } else {
+            console.warn('Backend não ficou online durante a inicialização. As chamadas serão tentadas quando o usuário interagir.');
+        }
+        // Agendar verificação periódica
+        setInterval(verificarStatusServidor, 30000);
+    })();
 
     // Modificar a função sendMessage para registrar logs
     async function sendMessage() {
@@ -952,6 +975,12 @@ document.addEventListener('DOMContentLoaded', () => {
     historyButton.addEventListener('click', () => {
         updateHistoryModal();
         historyModal.style.display = 'block';
+    });
+
+    // Painel Administrativo
+    adminButton.addEventListener('click', () => {
+        // Abrir painel administrativo em nova aba
+        window.open('/admin', '_blank');
     });
 
     closeButton.addEventListener('click', () => {

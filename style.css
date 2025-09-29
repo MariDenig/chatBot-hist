@@ -66,7 +66,7 @@ body {
     gap: 10px;
 }
 
-.action-button, .history-button {
+.action-button, .history-button, .admin-button {
     background: none;
     border: none;
     color: white;
@@ -76,12 +76,26 @@ body {
     padding: 5px;
 }
 
-.action-button:hover, .history-button:hover {
+.action-button:hover, .history-button:hover, .admin-button:hover {
     transform: scale(1.1);
 }
 
 .history-button {
     margin-left: 10px;
+}
+
+.admin-button {
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 8px;
+    margin-left: 5px;
+    transition: all 0.3s ease;
+}
+
+.admin-button:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .chat-messages {
