@@ -613,6 +613,265 @@ app.get('/api/admin/stats', requireAdmin, async (req, res) => {
     }
 });
 
+// GET /api/admin/dashboard - Dashboard Estratégico com Métricas Avançadas
+app.get('/api/admin/dashboard', requireAdmin, async (req, res) => {
+    try {
+        console.log('🎯 Iniciando coleta de dados para Dashboard Estratégico...');
+        
+        // Se Mongo indisponível, retornar métricas básicas de memória
+        if (!isMongoConnected) {
+            const totalMem = inMemorySessions.size;
+            const ultimasMem = Array.from(inMemorySessions.values())
+                .sort((a, b) => (b.startTime || 0) - (a.startTime || 0))
+                .slice(0, 5);
+            
+            const totalMensagensMem = ultimasMem.reduce((acc, s) => acc + (s.messages?.length || 0), 0);
+            const duracaoMediaMem = totalMem > 0 ? Math.round(totalMensagensMem / totalMem * 10) / 10 : 0;
+            
+            return res.json({
+                mongoConnected: false,
+                // Métricas básicas
+                totalConversas: totalMem,
+                totalMensagens: totalMensagensMem,
+                ultimasConversas: ultimasMem.map(s => ({
+                    sessionId: s.sessionId,
+                    titulo: s.titulo || 'Conversa Sem Título',
+                    startTime: s.startTime,
+                    messages: s.messages?.length || 0
+                })),
+                // Métricas avançadas (simuladas para memória)
+                duracaoMedia: duracaoMediaMem,
+                conversasCurtas: Math.floor(totalMem * 0.6),
+                conversasLongas: Math.floor(totalMem * 0.4),
+                topUsuarios: [],
+                conversasComFalha: [],
+                respostasInconclusivas: 0
+            });
+        }
+
+        // 🎯 CONSULTAS DE AGREGAÇÃO AVANÇADAS - SALA DE GUERRA DE DADOS
+        
+        // 1. PROFUNDIDADE DE ENGAJAMENTO - Análise de Duração das Conversas
+        console.log('📊 Analisando profundidade de engajamento...');
+        const profundidadeEngajamento = await SessaoChat.aggregate([
+            {
+                $project: {
+                    numeroDeMensagens: { $size: { $ifNull: ['$messages', []] } },
+                    sessionId: 1,
+                    startTime: 1,
+                    titulo: 1
+                }
+            },
+            {
+                $facet: {
+                    // Duração média das conversas
+                    duracaoMedia: [
+                        { $group: { _id: null, media: { $avg: '$numeroDeMensagens' } } }
+                    ],
+                    // Contagem de conversas curtas vs longas
+                    distribuicao: [
+                        {
+                            $group: {
+                                _id: {
+                                    $cond: [
+                                        { $lte: ['$numeroDeMensagens', 3] },
+                                        'curtas',
+                                        'longas'
+                                    ]
+                                },
+                                count: { $sum: 1 }
+                            }
+                        }
+                    ],
+                    // Distribuição detalhada
+                    distribuicaoDetalhada: [
+                        {
+                            $bucket: {
+                                groupBy: '$numeroDeMensagens',
+                                boundaries: [0, 2, 5, 10, 20, 50, 100],
+                                default: 'muito_longas',
+                                output: {
+                                    count: { $sum: 1 },
+                                    exemplos: { $push: { sessionId: '$sessionId', titulo: '$titulo', mensagens: '$numeroDeMensagens' } }
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        ]);
+
+        // 2. LEALDADE DO USUÁRIO - Top Usuários Mais Ativos
+        console.log('👥 Identificando usuários mais leais...');
+        const lealdadeUsuario = await SessaoChat.aggregate([
+            {
+                $project: {
+                    sessionId: 1,
+                    numeroDeMensagens: { $size: { $ifNull: ['$messages', []] } },
+                    startTime: 1,
+                    titulo: 1
+                }
+            },
+            {
+                $group: {
+                    _id: '$sessionId',
+                    totalSessoes: { $sum: 1 },
+                    totalMensagens: { $sum: '$numeroDeMensagens' },
+                    ultimaAtividade: { $max: '$startTime' },
+                    titulos: { $push: '$titulo' }
+                }
+            },
+            {
+                $project: {
+                    userId: '$_id',
+                    totalSessoes: 1,
+                    totalMensagens: 1,
+                    ultimaAtividade: 1,
+                    tituloMaisRecente: { $arrayElemAt: ['$titulos', 0] },
+                    engajamentoScore: {
+                        $add: [
+                            { $multiply: ['$totalSessoes', 2] },
+                            { $multiply: ['$totalMensagens', 0.1] }
+                        ]
+                    }
+                }
+            },
+            { $sort: { engajamentoScore: -1 } },
+            { $limit: 5 }
+        ]);
+
+        // 3. ANÁLISE DE FALHAS - Detecção de Respostas Inconclusivas
+        console.log('🔍 Analisando falhas do bot...');
+        const analiseFalhas = await SessaoChat.aggregate([
+            {
+                $unwind: '$messages'
+            },
+            {
+                $match: {
+                    'messages.role': 'assistant'
+                }
+            },
+            {
+                $project: {
+                    sessionId: 1,
+                    content: '$messages.content',
+                    timestamp: '$messages.timestamp',
+                    titulo: 1
+                }
+            },
+            {
+                $match: {
+                    $or: [
+                        { content: { $regex: /não entendi|não posso ajudar|não sei|desculpe.*não|pode reformular|não tenho informações/i } },
+                        { content: { $regex: /não consigo|não tenho acesso|não posso responder|não tenho dados/i } },
+                        { content: { $regex: /erro|falha|problema|não funcionou/i } },
+                        { content: { $regex: /^.{1,20}$/ } } // Respostas muito curtas (≤20 caracteres)
+                    ]
+                }
+            },
+            {
+                $group: {
+                    _id: '$sessionId',
+                    falhas: { $push: { content: '$content', timestamp: '$timestamp' } },
+                    titulo: { $first: '$titulo' },
+                    totalFalhas: { $sum: 1 }
+                }
+            },
+            {
+                $match: {
+                    totalFalhas: { $gte: 1 }
+                }
+            },
+            { $sort: { totalFalhas: -1 } },
+            { $limit: 10 }
+        ]);
+
+        // 4. MÉTRICAS GERAIS - Estatísticas Básicas
+        console.log('📈 Coletando métricas gerais...');
+        const metricasGerais = await SessaoChat.aggregate([
+            {
+                $facet: {
+                    totalConversas: [{ $count: 'total' }],
+                    totalMensagens: [
+                        { $project: { count: { $size: { $ifNull: ['$messages', []] } } } },
+                        { $group: { _id: null, total: { $sum: '$count' } } }
+                    ],
+                    ultimasConversas: [
+                        { $sort: { startTime: -1 } },
+                        { $limit: 5 },
+                        {
+                            $project: {
+                                sessionId: 1,
+                                titulo: 1,
+                                startTime: 1,
+                                messages: { $size: { $ifNull: ['$messages', []] } }
+                            }
+                        }
+                    ]
+                }
+            }
+        ]);
+
+        // Processar resultados
+        const duracaoMedia = profundidadeEngajamento[0]?.duracaoMedia?.[0]?.media || 0;
+        const distribuicao = profundidadeEngajamento[0]?.distribuicao || [];
+        const conversasCurtas = distribuicao.find(d => d._id === 'curtas')?.count || 0;
+        const conversasLongas = distribuicao.find(d => d._id === 'longas')?.count || 0;
+        
+        const totalConversas = metricasGerais[0]?.totalConversas?.[0]?.total || 0;
+        const totalMensagens = metricasGerais[0]?.totalMensagens?.[0]?.total || 0;
+        const ultimasConversas = metricasGerais[0]?.ultimasConversas || [];
+        
+        const respostasInconclusivas = analiseFalhas.reduce((acc, conv) => acc + conv.totalFalhas, 0);
+
+        console.log('✅ Dashboard Estratégico montado com sucesso!');
+        console.log(`📊 Métricas: ${totalConversas} conversas, ${totalMensagens} mensagens`);
+        console.log(`🎯 Engajamento: ${duracaoMedia.toFixed(1)} mensagens/conversa em média`);
+        console.log(`👥 Top usuários: ${lealdadeUsuario.length} identificados`);
+        console.log(`🔍 Falhas detectadas: ${respostasInconclusivas} respostas inconclusivas`);
+
+        res.json({
+            mongoConnected: true,
+            // Métricas básicas
+            totalConversas,
+            totalMensagens,
+            ultimasConversas,
+            // Profundidade de Engajamento
+            duracaoMedia: Math.round(duracaoMedia * 10) / 10,
+            conversasCurtas,
+            conversasLongas,
+            distribuicaoDetalhada: profundidadeEngajamento[0]?.distribuicaoDetalhada || [],
+            // Lealdade do Usuário
+            topUsuarios: lealdadeUsuario.map(user => ({
+                userId: user.userId,
+                totalSessoes: user.totalSessoes,
+                totalMensagens: user.totalMensagens,
+                ultimaAtividade: user.ultimaAtividade,
+                tituloMaisRecente: user.tituloMaisRecente,
+                engajamentoScore: Math.round(user.engajamentoScore * 10) / 10
+            })),
+            // Análise de Falhas
+            conversasComFalha: analiseFalhas.map(conv => ({
+                sessionId: conv._id,
+                titulo: conv.titulo,
+                totalFalhas: conv.totalFalhas,
+                exemplosFalhas: conv.falhas.slice(0, 3) // Primeiras 3 falhas como exemplo
+            })),
+            respostasInconclusivas,
+            // Metadados
+            timestamp: new Date().toISOString(),
+            versao: '2.0.0 - Sala de Guerra de Dados'
+        });
+
+    } catch (error) {
+        console.error('❌ Erro no Dashboard Estratégico:', error);
+        res.status(500).json({ 
+            error: 'Erro ao obter dados do dashboard estratégico',
+            details: error.message 
+        });
+    }
+});
+
 // GET /api/admin/system-instruction
 app.get('/api/admin/system-instruction', requireAdmin, async (req, res) => {
     try {

@@ -82,6 +82,15 @@ document.addEventListener('DOMContentLoaded', () => {
         return resp.json();
     }
 
+    // 🎯 NOVA FUNÇÃO: Buscar dados do Dashboard Estratégico
+    async function fetchDashboardData() {
+        const resp = await fetch(`${API_BASE}/api/admin/dashboard`, {
+            headers: { 'x-admin-secret': adminSecret }
+        });
+        if (!resp.ok) throw new Error('Falha ao carregar dados do dashboard estratégico');
+        return resp.json();
+    }
+
     async function fetchServerStatus() {
         try {
             const resp = await fetch(`${API_BASE}/status`);
@@ -131,24 +140,24 @@ document.addEventListener('DOMContentLoaded', () => {
             // Mostrar loading
             showLoading(true);
             
-            // Carregar estatísticas e status em paralelo
-            const [stats, serverStatus] = await Promise.all([
-                fetchStats(),
+            // Carregar dados do dashboard estratégico e status em paralelo
+            const [dashboardData, serverStatus] = await Promise.all([
+                fetchDashboardData(),
                 fetchServerStatus()
             ]);
 
             // Atualizar métricas principais
-            elTotalConversas.textContent = stats.totalConversas || 0;
-            elTotalMensagens.textContent = stats.totalMensagens || 0;
-            elMongo.textContent = stats.mongoConnected ? '✅ Conectado' : '❌ Desconectado';
-            elMongo.className = stats.mongoConnected ? 'metric-value' : 'metric-value';
+            elTotalConversas.textContent = dashboardData.totalConversas || 0;
+            elTotalMensagens.textContent = dashboardData.totalMensagens || 0;
+            elMongo.textContent = dashboardData.mongoConnected ? '✅ Conectado' : '❌ Desconectado';
+            elMongo.className = dashboardData.mongoConnected ? 'metric-value' : 'metric-value';
             elServer.textContent = serverStatus.online ? '✅ Online' : '❌ Offline';
             elServer.className = serverStatus.online ? 'metric-value' : 'metric-value';
 
             // Atualizar lista de conversas
             ulUltimas.innerHTML = '';
-            if (stats.ultimasConversas && stats.ultimasConversas.length > 0) {
-                stats.ultimasConversas.forEach(c => {
+            if (dashboardData.ultimasConversas && dashboardData.ultimasConversas.length > 0) {
+                dashboardData.ultimasConversas.forEach(c => {
                     const li = document.createElement('li');
                     li.innerHTML = `
                         <div class="conversa-titulo">${c.titulo || 'Conversa Sem Título'}</div>
@@ -166,14 +175,146 @@ document.addEventListener('DOMContentLoaded', () => {
                 ulUltimas.appendChild(li);
             }
 
+            // 🎯 ATUALIZAR MÓDULOS DA SALA DE GUERRA DE DADOS
+            updateWarRoomModules(dashboardData);
+
             // Atualizar estatísticas detalhadas
-            updateDetailedStats(stats, serverStatus);
+            updateDetailedStats(dashboardData, serverStatus);
 
         } catch (e) {
             console.error('Erro ao carregar dados:', e);
             showStatus('❌ Erro ao carregar dados: ' + e.message, 'error');
         } finally {
             showLoading(false);
+        }
+    }
+
+    // 🎯 FUNÇÃO PRINCIPAL: Atualizar Módulos da Sala de Guerra de Dados
+    function updateWarRoomModules(data) {
+        console.log('🎯 Atualizando módulos da Sala de Guerra de Dados...');
+        
+        // 1. PROFUNDIDADE DE ENGAJAMENTO
+        updateEngagementMetrics(data);
+        
+        // 2. LEALDADE DO USUÁRIO
+        updateUserLoyalty(data);
+        
+        // 3. ANÁLISE DE FALHAS
+        updateFailureAnalysis(data);
+        
+        console.log('✅ Módulos da Sala de Guerra atualizados com sucesso!');
+    }
+
+    // 📊 Módulo: Profundidade de Engajamento
+    function updateEngagementMetrics(data) {
+        // Atualizar métricas básicas
+        document.getElementById('duracao-media').textContent = data.duracaoMedia || 0;
+        document.getElementById('conversas-curtas').textContent = data.conversasCurtas || 0;
+        document.getElementById('conversas-longas').textContent = data.conversasLongas || 0;
+        
+        // Atualizar distribuição detalhada
+        const distribuicaoEl = document.getElementById('distribuicao-engajamento');
+        if (data.distribuicaoDetalhada && data.distribuicaoDetalhada.length > 0) {
+            distribuicaoEl.innerHTML = '';
+            
+            data.distribuicaoDetalhada.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'distribution-item';
+                
+                let label = '';
+                switch(item._id) {
+                    case 0: label = '0-1 mensagens'; break;
+                    case 2: label = '2-4 mensagens'; break;
+                    case 5: label = '5-9 mensagens'; break;
+                    case 10: label = '10-19 mensagens'; break;
+                    case 20: label = '20-49 mensagens'; break;
+                    case 50: label = '50-99 mensagens'; break;
+                    case 100: label = '100+ mensagens'; break;
+                    case 'muito_longas': label = 'Muito Longas (100+)'; break;
+                    default: label = `${item._id} mensagens`;
+                }
+                
+                div.innerHTML = `
+                    <span class="distribution-label">${label}</span>
+                    <span class="distribution-count">${item.count}</span>
+                `;
+                distribuicaoEl.appendChild(div);
+            });
+        } else {
+            distribuicaoEl.innerHTML = '<div class="no-data">Nenhuma distribuição disponível</div>';
+        }
+    }
+
+    // 👥 Módulo: Lealdade do Usuário
+    function updateUserLoyalty(data) {
+        const topUsuariosEl = document.getElementById('top-usuarios');
+        
+        if (data.topUsuarios && data.topUsuarios.length > 0) {
+            topUsuariosEl.innerHTML = '';
+            
+            data.topUsuarios.forEach((user, index) => {
+                const div = document.createElement('div');
+                div.className = 'user-item';
+                
+                const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '🏅';
+                
+                div.innerHTML = `
+                    <div class="user-info">
+                        <div class="user-id">${medal} ${user.userId.substring(0, 12)}...</div>
+                        <div class="user-stats">
+                            📊 ${user.totalSessoes} sessões • 💬 ${user.totalMensagens} mensagens • 
+                            🕒 ${formatRelativeTime(user.ultimaAtividade)}
+                        </div>
+                    </div>
+                    <div class="user-score">${user.engajamentoScore}</div>
+                `;
+                topUsuariosEl.appendChild(div);
+            });
+        } else {
+            topUsuariosEl.innerHTML = '<div class="no-data">Nenhum usuário ativo identificado</div>';
+        }
+    }
+
+    // 🔍 Módulo: Análise de Falhas
+    function updateFailureAnalysis(data) {
+        // Atualizar métricas de falha
+        document.getElementById('respostas-inconclusivas').textContent = data.respostasInconclusivas || 0;
+        
+        // Calcular taxa de falha
+        const totalMensagens = data.totalMensagens || 1;
+        const taxaFalha = ((data.respostasInconclusivas || 0) / totalMensagens * 100).toFixed(1);
+        document.getElementById('taxa-falha').textContent = `${taxaFalha}%`;
+        
+        // Atualizar log de falhas
+        const conversasFalhaEl = document.getElementById('conversas-falha');
+        
+        if (data.conversasComFalha && data.conversasComFalha.length > 0) {
+            conversasFalhaEl.innerHTML = '';
+            
+            data.conversasComFalha.forEach(conv => {
+                const div = document.createElement('div');
+                div.className = 'failure-item';
+                
+                let exemplosHtml = '';
+                if (conv.exemplosFalhas && conv.exemplosFalhas.length > 0) {
+                    exemplosHtml = '<div class="failure-examples">';
+                    conv.exemplosFalhas.forEach(falha => {
+                        exemplosHtml += `<div class="failure-example">"${falha.content.substring(0, 100)}${falha.content.length > 100 ? '...' : ''}"</div>`;
+                    });
+                    exemplosHtml += '</div>';
+                }
+                
+                div.innerHTML = `
+                    <div class="failure-session">
+                        🚨 ${conv.titulo || 'Conversa Sem Título'}
+                        <span class="failure-count">${conv.totalFalhas} falhas</span>
+                    </div>
+                    ${exemplosHtml}
+                `;
+                conversasFalhaEl.appendChild(div);
+            });
+        } else {
+            conversasFalhaEl.innerHTML = '<div class="no-data">🎉 Nenhuma falha detectada! O bot está funcionando perfeitamente.</div>';
         }
     }
 
