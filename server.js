@@ -9,6 +9,7 @@ const mongoose = require('mongoose');
 const mongooseProf = require('mongoose');
 const SessaoChat = require('./models/SessaoChat');
 const Configuracao = require('./models/Configuracao');
+const Usuario = require('./models/Usuario');
 
 // Verificar se o arquivo .env existe
 const envPath = path.join(__dirname, '.env');
@@ -409,8 +410,23 @@ const availableFunctions = {
     }
 };
 
+// Utilitário: obter instrução de sistema do usuário, se existir
+async function getUserInstruction(userId) {
+    try {
+        if (!isMongoConnected) return null;
+        if (!userId) return null;
+        const usuario = await Usuario.findOne({ userId: String(userId) });
+        const texto = usuario?.systemInstruction;
+        if (texto && typeof texto === 'string' && texto.trim()) return texto.trim();
+        return null;
+    } catch (e) {
+        console.warn('Falha ao carregar systemInstruction do usuário:', e.message);
+        return null;
+    }
+}
+
 // Função para gerar resposta usando Gemini
-async function generateResponse(message, history) {
+async function generateResponse(message, history, userId) {
     try {
         console.log('Iniciando geração de resposta...');
         console.log('Mensagem recebida:', message);
@@ -452,11 +468,14 @@ async function generateResponse(message, history) {
         });
 
         // Preparar o prompt com timeout
-        // Carregar instrução global configurável (se existir)
-        const systemInstruction = await getSystemInstruction();
-        const baseInstrucao = systemInstruction && systemInstruction.trim().length > 0
-            ? systemInstruction.trim()
-            : 'Você é um historiador especializado. Responda de forma clara, precisa e didática.';
+        // Carregar instrução do usuário, senão global
+        const userInstr = await getUserInstruction(userId);
+        const globalInstr = await getSystemInstruction();
+        const baseInstrucao = (userInstr && userInstr.trim())
+            ? userInstr.trim()
+            : (globalInstr && globalInstr.trim())
+                ? globalInstr.trim()
+                : 'Você é um historiador especializado. Responda de forma clara, precisa e didática.';
 
         const prompt = `${baseInstrucao}\n\nPergunta do usuário:\n${message}`;
 
@@ -534,6 +553,17 @@ app.get('/', (req, res) => {
 app.get('/admin', (req, res) => {
     res.sendFile(path.join(__dirname, '', 'admin.html'));
 });
+
+// Middleware simples para identificar usuário (ex.: via header x-user-id)
+function requireUser(req, res, next) {
+    if (!isMongoConnected) return res.status(503).json({ error: 'MongoDB indisponível' });
+    const userId = req.headers['x-user-id'];
+    if (!userId || !String(userId).trim()) {
+        return res.status(401).json({ error: 'Usuário não autenticado' });
+    }
+    req.userId = String(userId).trim();
+    return next();
+}
 
 // Middleware simples de autenticação de administrador por header
 function requireAdmin(req, res, next) {
@@ -906,6 +936,42 @@ app.post('/api/admin/system-instruction', requireAdmin, async (req, res) => {
     }
 });
 
+// ========================
+// Preferências do Usuário
+// ========================
+
+// GET /api/user/preferences - retorna a instrução personalizada
+app.get('/api/user/preferences', requireUser, async (req, res) => {
+    try {
+        const { userId } = req;
+        const usuario = await Usuario.findOne({ userId });
+        res.json({ userId, systemInstruction: usuario?.systemInstruction || '' });
+    } catch (error) {
+        console.error('Erro ao obter preferências do usuário:', error);
+        res.status(500).json({ error: 'Erro ao obter preferências' });
+    }
+});
+
+// PUT /api/user/preferences - atualiza a instrução personalizada
+app.put('/api/user/preferences', requireUser, async (req, res) => {
+    try {
+        const { userId } = req;
+        const { systemInstruction } = req.body || {};
+        if (typeof systemInstruction !== 'string') {
+            return res.status(400).json({ error: 'systemInstruction inválida' });
+        }
+        const atualizado = await Usuario.findOneAndUpdate(
+            { userId },
+            { $set: { systemInstruction: systemInstruction.trim(), updatedAt: new Date() } },
+            { new: true, upsert: true }
+        );
+        res.json({ saved: true, userId, systemInstruction: atualizado.systemInstruction });
+    } catch (error) {
+        console.error('Erro ao salvar preferências do usuário:', error);
+        res.status(500).json({ error: 'Erro ao salvar preferências' });
+    }
+});
+
 // Rota para verificar status do servidor
 app.get('/status', (req, res) => {
     const status = {
@@ -925,7 +991,9 @@ app.get('/status', (req, res) => {
 app.post('/chat', async (req, res) => {
     try {
         console.log('Recebida requisição POST em /chat');
-        const { message, history, sessionId: clientSessionId } = req.body;
+        const { message, history, sessionId: clientSessionId, userId: bodyUserId } = req.body;
+        const headerUserId = req.headers['x-user-id'];
+        const effectiveUserId = bodyUserId || headerUserId || null;
         
         if (!message) {
             return res.status(400).json({ 
@@ -937,7 +1005,7 @@ app.post('/chat', async (req, res) => {
         // Gerar resposta do bot primeiro
         let botResponse;
         try {
-            botResponse = await generateResponse(message, history);
+            botResponse = await generateResponse(message, history, effectiveUserId);
         } catch (responseError) {
             console.error('Erro ao gerar resposta:', responseError);
             botResponse = 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.';
@@ -1053,6 +1121,7 @@ app.post('/chat', async (req, res) => {
                 { role: 'assistant', content: botResponse }
             ],
             sessionId: sessionId,
+            userId: effectiveUserId || undefined,
             timestamp: new Date().toISOString()
         };
 
