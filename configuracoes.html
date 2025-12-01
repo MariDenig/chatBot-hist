@@ -28,9 +28,8 @@
         a { color: #4e54c8; text-decoration: none; }
     </style>
     <script>
-        window.API_BASE = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
-            ? 'http://localhost:3000'
-            : 'https://chatbot-historia.onrender.com';
+        const isLocal = ['localhost', '127.0.0.1', ''].includes(location.hostname) || location.protocol === 'file:';
+        window.API_BASE = isLocal ? `http://${location.hostname || 'localhost'}:3001` : 'https://chatbot-historia.onrender.com';
     </script>
 </head>
 <body>
@@ -42,9 +41,12 @@
 
         <div class="card">
             <div class="row">
-                <input id="user-id" class="input" placeholder="Seu ID de usuário (obrigatório)" />
+                <input id="user-id" class="input" placeholder="Seu ID de usuário" />
                 <button id="btn-carregar" class="btn btn-secondary">📥 Carregar Atual</button>
             </div>
+
+            <label class="label" for="apelido-bot">Apelido do Bot</label>
+            <input id="apelido-bot" class="input" placeholder="Ex.: Gemini IFPR, Prof. História, MariBot..." />
 
             <label class="label" for="txt-instrucao">Instrução de Sistema Personalizada</label>
             <textarea id="txt-instrucao" placeholder="Ex.: Você é um mestre de yoga e suas respostas são sempre calmas e reflexivas."></textarea>

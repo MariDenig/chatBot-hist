@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let isProcessing = false; // Controlar estado de processamento
     let sessionId = localStorage.getItem('chat_session_id') || null;
     let backendOnline = false; // Estado do backend
+    const currentUserId = localStorage.getItem('chat_user_id') || null;
 
     // Criar indicador de digitação
     const typingIndicator = document.createElement('div');
@@ -46,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Adicionar mensagem de boas-vindas
     addMessage('Olá! Eu sou o Chatbot Historiador. Estou aqui para responder suas perguntas sobre história. Como posso ajudar você hoje?');
     initializeOnboarding();
+    aplicarApelidoDoBot();
     function initializeOnboarding() {
         const onboardingDismissed = localStorage.getItem(ONBOARDING_KEY);
         if (onboardingDismissed === 'true' && onboardingCard) {
@@ -65,6 +67,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 250);
         if (persistPreference) {
             localStorage.setItem(ONBOARDING_KEY, 'true');
+        }
+    }
+
+    async function aplicarApelidoDoBot() {
+        try {
+            if (!currentUserId || !backendOnline) return;
+            const resp = await fetch(`${API_BASE}/api/user/putpreferences`, {
+                headers: { 'x-user-id': currentUserId }
+            });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            const nomeBotEl = document.getElementById('nome-bot-display');
+            if (nomeBotEl && data.apelidoBot) {
+                nomeBotEl.textContent = data.apelidoBot;
+            }
+        } catch (e) {
+            console.warn('Não foi possível aplicar apelido personalizado do bot:', e.message);
         }
     }
 
@@ -802,7 +821,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ 
                     message,
                     history: chatHistory,
-                    sessionId: sessionId
+                    sessionId: sessionId,
+                    userId: currentUserId
                 }),
             });
 
@@ -1012,7 +1032,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Painel Administrativo
     adminButton.addEventListener('click', () => {
         // Abrir painel administrativo em nova aba
-        window.open('/admin', '_blank');
+        window.open('/admin.html', '_blank');
     });
 
     closeButton.addEventListener('click', () => {

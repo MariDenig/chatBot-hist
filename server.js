@@ -122,6 +122,7 @@ async function connectDB() {
             
             isMongoConnected = true;
             console.log('Conectado ao MongoDB Atlas via Mongoose!');
+            await persistCachedPreferences();
         }
         return mongoose.connection.db;
     } catch (error) {
@@ -142,6 +143,25 @@ async function connectDB() {
         
         // Não lança erro para permitir que o servidor continue
         return null;
+    }
+}
+
+async function persistCachedPreferences() {
+    if (!isMongoConnected || userPreferencesCache.size === 0) return;
+    for (const [userId, pref] of userPreferencesCache.entries()) {
+        try {
+            const instruction = pref?.systemInstruction || '';
+            const apelidoBot = pref?.apelidoBot || '';
+            await Usuario.findOneAndUpdate(
+                { userId },
+                { $set: { systemInstruction: instruction, apelidoBot, updatedAt: new Date() } },
+                { new: true, upsert: true }
+            );
+            userPreferencesCache.delete(userId);
+            console.log(`Preferência cacheada sincronizada para o usuário ${userId}`);
+        } catch (error) {
+            console.warn(`Falha ao sincronizar preferência cacheada do usuário ${userId}:`, error.message);
+        }
     }
 }
 
@@ -263,6 +283,7 @@ const tools = [    {
 // Funções disponíveis
 // Armazenamento em memória para fallback quando Mongo não está disponível
 const inMemorySessions = new Map();
+const userPreferencesCache = new Map(); // Preferências do usuário quando Mongo não estiver disponível
 
 const availableFunctions = {
     getCurrentTime: async () => {
@@ -556,7 +577,6 @@ app.get('/admin', (req, res) => {
 
 // Middleware simples para identificar usuário (ex.: via header x-user-id)
 function requireUser(req, res, next) {
-    if (!isMongoConnected) return res.status(503).json({ error: 'MongoDB indisponível' });
     const userId = req.headers['x-user-id'];
     if (!userId || !String(userId).trim()) {
         return res.status(401).json({ error: 'Usuário não autenticado' });
@@ -944,8 +964,20 @@ app.post('/api/admin/system-instruction', requireAdmin, async (req, res) => {
 app.get('/api/user/preferences', requireUser, async (req, res) => {
     try {
         const { userId } = req;
+        if (!isMongoConnected) {
+            return res.json({
+                userId,
+                systemInstruction: userPreferencesCache.get(userId)?.systemInstruction || '',
+                apelidoBot: userPreferencesCache.get(userId)?.apelidoBot || '',
+                source: 'cache'
+            });
+        }
         const usuario = await Usuario.findOne({ userId });
-        res.json({ userId, systemInstruction: usuario?.systemInstruction || '' });
+        res.json({ 
+            userId, 
+            systemInstruction: usuario?.systemInstruction || '',
+            apelidoBot: usuario?.apelidoBot || ''
+        });
     } catch (error) {
         console.error('Erro ao obter preferências do usuário:', error);
         res.status(500).json({ error: 'Erro ao obter preferências' });
@@ -953,22 +985,101 @@ app.get('/api/user/preferences', requireUser, async (req, res) => {
 });
 
 // PUT /api/user/preferences - atualiza a instrução personalizada
-app.put('/api/user/preferences', requireUser, async (req, res) => {
+app.put('/api/user/putpreferences', requireUser, async (req, res) => {
     try {
         const { userId } = req;
-        const { systemInstruction } = req.body || {};
+        const { systemInstruction, apelidoBot } = req.body || {};
         if (typeof systemInstruction !== 'string') {
             return res.status(400).json({ error: 'systemInstruction inválida' });
         }
+        const sanitizedInstruction = systemInstruction.trim();
+        const sanitizedApelido = typeof apelidoBot === 'string' ? apelidoBot.trim() : '';
+        if (!isMongoConnected) {
+            userPreferencesCache.set(userId, { systemInstruction: sanitizedInstruction, apelidoBot: sanitizedApelido });
+            return res.status(202).json({
+                saved: true,
+                cached: true,
+                userId,
+                systemInstruction: sanitizedInstruction,
+                apelidoBot: sanitizedApelido,
+                message: 'MongoDB indisponível. Preferência salva temporariamente e será sincronizada ao restabelecer a conexão.'
+            });
+        }
         const atualizado = await Usuario.findOneAndUpdate(
             { userId },
-            { $set: { systemInstruction: systemInstruction.trim(), updatedAt: new Date() } },
+            { $set: { systemInstruction: sanitizedInstruction, apelidoBot: sanitizedApelido, updatedAt: new Date() } },
             { new: true, upsert: true }
         );
-        res.json({ saved: true, userId, systemInstruction: atualizado.systemInstruction });
+        if (userPreferencesCache.has(userId)) {
+            userPreferencesCache.delete(userId);
+        }
+        res.json({ 
+            saved: true, 
+            userId, 
+            systemInstruction: atualizado.systemInstruction,
+            apelidoBot: atualizado.apelidoBot || ''
+        });
     } catch (error) {
         console.error('Erro ao salvar preferências do usuário:', error);
         res.status(500).json({ error: 'Erro ao salvar preferências' });
+    }
+});
+
+// ========================
+// Autenticação simples
+// ========================
+
+// POST /api/auth/simple-login - cria ou encontra usuário pelo email e retorna userId
+app.post('/api/auth/simple-login', async (req, res) => {
+    try {
+        const { nome, email } = req.body || {};
+        if (!email || typeof email !== 'string' || !email.trim()) {
+            return res.status(400).json({ error: 'Email é obrigatório.' });
+        }
+        const emailNorm = email.trim().toLowerCase();
+        const nomeNorm = (nome || '').trim();
+
+        // Gerar userId simples a partir do email (mas separado)
+        const baseId = emailNorm.split('@')[0].replace(/[^a-z0-9]/gi, '').toLowerCase() || 'user';
+        const userId = `u_${baseId}`;
+
+        if (!isMongoConnected) {
+            // Mesmo sem Mongo, permitir uso básico salvando em memória
+            const pref = userPreferencesCache.get(userId) || {};
+            userPreferencesCache.set(userId, {
+                ...pref,
+                email: emailNorm,
+                nome: nomeNorm || pref.nome || '',
+            });
+            return res.status(200).json({
+                userId,
+                nome: nomeNorm || '',
+                email: emailNorm,
+                cached: true,
+                message: 'MongoDB indisponível. Usuário mantido temporariamente em memória.'
+            });
+        }
+
+        const atualizado = await Usuario.findOneAndUpdate(
+            { email: emailNorm },
+            {
+                $set: {
+                    userId,
+                    email: emailNorm,
+                    nome: nomeNorm || emailNorm.split('@')[0],
+                }
+            },
+            { new: true, upsert: true }
+        );
+
+        res.json({
+            userId: atualizado.userId,
+            nome: atualizado.nome,
+            email: atualizado.email
+        });
+    } catch (error) {
+        console.error('Erro em /api/auth/simple-login:', error);
+        res.status(500).json({ error: 'Erro ao realizar login simples.' });
     }
 });
 

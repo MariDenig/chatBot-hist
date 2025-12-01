@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Login - Chatbot Historiador</title>
+    <link rel="stylesheet" href="style.css" />
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: #f5f7fb; }
+        .container { max-width: 480px; margin: 0 auto; padding: 24px; }
+        .card { background: #fff; border-radius: 16px; padding: 24px 20px; margin-top: 32px; box-shadow: 0 10px 25px rgba(0,0,0,0.06); }
+        h1 { margin: 0 0 8px 0; font-size: 1.6rem; color: #c2185b; }
+        p { margin: 0 0 16px 0; color: #555; font-size: 0.97rem; }
+        label { display: block; font-size: 0.9rem; color: #555; margin-bottom: 4px; }
+        input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 2px solid #e9ecef; font-size: 0.95rem; margin-bottom: 12px; }
+        input:focus { border-color: #c2185b; outline: none; }
+        .btn { width: 100%; padding: 10px 16px; border: none; border-radius: 10px; background: #c2185b; color: #fff; font-weight: 600; cursor: pointer; font-size: 0.98rem; }
+        .btn:hover { background: #ad1457; }
+        .status { margin-top: 10px; font-size: 0.9rem; }
+        .status.error { color: #d32f2f; }
+        .status.success { color: #2e7d32; }
+        .hint { margin-top: 10px; font-size: 0.85rem; color: #777; }
+        .link { display: inline-block; margin-top: 12px; font-size: 0.9rem; color: #c2185b; text-decoration: none; }
+    </style>
+    <script>
+        const isLocal = ['localhost', '127.0.0.1', ''].includes(location.hostname) || location.protocol === 'file:';
+        window.API_BASE = isLocal ? `http://${location.hostname || 'localhost'}:3001` : 'https://chatbot-historia.onrender.com';
+    </script>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>Entrar no Chatbot</h1>
+            <p>Crie ou acesse seu usuário para personalizar a personalidade e o apelido do bot.</p>
+
+            <label for="nome">Seu nome</label>
+            <input id="nome" type="text" placeholder="Ex.: Mariani" />
+
+            <label for="email">Email</label>
+            <input id="email" type="email" placeholder="Ex.: voce@ifpr.edu.br" />
+
+            <button id="btn-login" class="btn">Continuar</button>
+            <div id="status-login" class="status"></div>
+            <p class="hint">Usamos seu email apenas para identificar seu usuário no banco (MongoDB). Não há recuperação de senha neste protótipo.</p>
+            <a href="/" class="link">⬅️ Voltar para o chat</a>
+        </div>
+    </div>
+
+    <script src="login.js"></script>
+</body>
+</html>
+
+
