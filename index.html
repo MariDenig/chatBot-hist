@@ -36,11 +36,26 @@
                     </button>
                 </div>
             </div>
-            <div class="chat-messages" id="chat-messages">
+            <div class="chat-messages" id="chat-messages" role="log" aria-live="polite" aria-label="Mensagens do chatbot">
                 <!-- Mensagens serão inseridas aqui -->
             </div>
+            <section id="onboarding-card" class="onboarding-card" aria-live="polite">
+                <div class="onboarding-card__content">
+                    <p class="onboarding-card__title">Primeira vez aqui?</p>
+                    <p class="onboarding-card__subtitle">Em menos de 1 minuto você:</p>
+                    <ul>
+                        <li><span data-step="1">Faz login e escolhe um nome para o bot.</span></li>
+                        <li><span data-step="2">Personaliza o tom da IA nas configurações.</span></li>
+                        <li><span data-step="3">Conversa e salva suas sessões favoritas.</span></li>
+                    </ul>
+                </div>
+                <button id="dismiss-onboarding" class="ghost-button" type="button">
+                    Começar agora
+                </button>
+            </section>
             <div class="chat-input-container">
-                <input type="text" id="user-input" placeholder="Digite sua pergunta sobre história...">
+                <label for="user-input" class="sr-only">Pergunte algo sobre história</label>
+                <input type="text" id="user-input" placeholder="Ex.: Explique a Revolução Industrial em 3 tópicos">
                 <button id="send-button">Enviar</button>
             </div>
         </div>

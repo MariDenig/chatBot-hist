@@ -1,8 +1,10 @@
 document.addEventListener('DOMContentLoaded', () => {
     // Definir base da API dinamicamente (ambiente local vs produção)
-    const API_BASE = window.API_BASE 
-        || (location.hostname === 'localhost' || location.hostname === '127.0.0.1'
-            ? 'http://localhost:3000'
+    const isLocalhost = ['localhost', '127.0.0.1', ''].includes(location.hostname) || location.protocol === 'file:';
+    const localFallbackHost = location.hostname || 'localhost';
+    const API_BASE = window.API_BASE
+        || (isLocalhost
+            ? `http://${localFallbackHost}:3001`
             : 'https://chatbot-historia.onrender.com');
     const chatMessages = document.getElementById('chat-messages');
     const userInput = document.getElementById('user-input');
@@ -19,6 +21,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const cityInput = document.getElementById('city-input');
     const checkWeatherButton = document.getElementById('check-weather-button');
     const statusIndicator = document.getElementById('status-indicator'); // Adicionar indicador de status
+    const onboardingCard = document.getElementById('onboarding-card');
+    const onboardingDismissButton = document.getElementById('dismiss-onboarding');
+    const ONBOARDING_KEY = 'chatbot_onboarding_dismissed_v2';
 
     let chatHistory = []; // Armazenar o histórico da conversa
     let conversationHistory = []; // Armazenar conversas completas
@@ -40,6 +45,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Adicionar mensagem de boas-vindas
     addMessage('Olá! Eu sou o Chatbot Historiador. Estou aqui para responder suas perguntas sobre história. Como posso ajudar você hoje?');
+    initializeOnboarding();
+    function initializeOnboarding() {
+        const onboardingDismissed = localStorage.getItem(ONBOARDING_KEY);
+        if (onboardingDismissed === 'true' && onboardingCard) {
+            onboardingCard.style.display = 'none';
+        }
+        if (onboardingDismissButton) {
+            onboardingDismissButton.addEventListener('click', () => hideOnboarding(true));
+        }
+    }
+
+    function hideOnboarding(persistPreference = false) {
+        if (!onboardingCard) return;
+        onboardingCard.style.opacity = '0';
+        onboardingCard.style.transform = 'translateY(-6px)';
+        setTimeout(() => {
+            onboardingCard.style.display = 'none';
+        }, 250);
+        if (persistPreference) {
+            localStorage.setItem(ONBOARDING_KEY, 'true');
+        }
+    }
+
 
     function scrollToBottom() {
         chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -715,6 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Funções para os botões de ação
     function checkCurrentTime() {
         if (isProcessing) return;
+        hideOnboarding(true);
         setLoading(true);
         
         // Simular envio da mensagem do usuário
@@ -726,6 +755,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function showWeatherModal() {
+        hideOnboarding(true);
         weatherModal.style.display = 'block';
     }
 
@@ -748,6 +778,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function processBotRequest(message) {
         const startTime = Date.now();
         try {
+            hideOnboarding(true);
             if (!backendOnline) {
                 // Tentar checar status rapidamente antes de falhar
                 await verificarStatusServidor();
@@ -948,6 +979,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function sendMessage() {
         const message = userInput.value.trim();
         if (!message || isProcessing) return;
+        hideOnboarding(true);
 
         setLoading(true);
         addMessage(message, true);
